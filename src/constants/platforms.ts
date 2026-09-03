@@ -42,11 +42,23 @@ export const PLATFORMS = {
     logoPath: '/jse4MOi92Jgetym7nbXFZZBI6LK.jpg',
     jwPackages: ['mp9', 'mvs'],
   },
+  appletv: {
+    ids: [350, 2243], // 350 = Apple TV / Apple TV+, 2243 = Apple TV Amazon Channel
+    name: 'Apple TV',
+    logoPath: '/mcbz1LgtErU9p4UdbZ0rG6RTWHX.jpg',
+    jwPackages: ['atp'],
+  },
   filmin: {
     ids: [63, 64], // 64 = Filmin Plus
     name: 'Filmin',
     logoPath: '/kO2SWXvDCHAquaUuTJBuZkTBAuU.jpg',
     jwPackages: ['fil', 'fip'],
+  },
+  youtube: {
+    ids: [188, 192], // 188 = YouTube Premium, 192 = YouTube
+    name: 'YouTube',
+    logoPath: '/pTnn5JwWr4p3pG8H6VrpiQo7Vs0.jpg',
+    jwPackages: ['ytr'],
   },
 };
 
