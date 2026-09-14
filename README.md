@@ -33,6 +33,7 @@ Netflix, Amazon Prime Video, Disney+, HBO Max, SkyShowtime, Movistar Plus+, Appl
 - **Scraping:** `axios` (peticiones HTTP) + `cheerio` (parseo de HTML).
 - **API Externa:** TMDB API (The Movie Database).
 - **Almacenamiento:** `@react-native-async-storage/async-storage`.
+- **Icono:** glifo _movie-check_ de [Material Design Icons](https://pictogrammers.com/library/mdi/) (Apache 2.0).
 
 ## 🚀 Cómo ejecutar
 

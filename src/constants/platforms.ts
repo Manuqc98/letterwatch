@@ -46,7 +46,7 @@ export const PLATFORMS = {
     ids: [350, 2243], // 350 = Apple TV / Apple TV+, 2243 = Apple TV Amazon Channel
     name: 'Apple TV',
     logoPath: '/mcbz1LgtErU9p4UdbZ0rG6RTWHX.jpg',
-    jwPackages: ['atp'],
+    jwPackages: ['atp', 'avl'], // avl = Apple TV Amazon Channel
   },
   filmin: {
     ids: [63, 64], // 64 = Filmin Plus
@@ -57,7 +57,7 @@ export const PLATFORMS = {
   youtube: {
     ids: [188, 192], // 188 = YouTube Premium, 192 = YouTube
     name: 'YouTube',
-    logoPath: '/pTnn5JwWr4p3pG8H6VrpiQo7Vs0.jpg',
+    logoPath: '/rMb93u1tBeErSYLv79zSTR07UdO.jpg', // logo TMDB verificado de YouTube Premium (188)
     jwPackages: ['ytr'],
   },
 };
