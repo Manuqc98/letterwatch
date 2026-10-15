@@ -18,9 +18,9 @@ LetterWatch automatiza este proceso:
 ## 📱 Flujo del Usuario
 
 - **Primera vez (Onboarding):** El usuario introduce su nombre de usuario de Letterboxd y activa los "switches" de las plataformas que paga (Ej: Netflix, Movistar Plus+, HBO Max...).
-- **Pantalla Principal (Feed):** El usuario ve una cuadrícula con los pósters de las películas que sí puede ver hoy mismo, con los logos de la(s) plataforma(s) donde están. Tocar un póster abre la ficha de la película en la app de Letterboxd (o en la web si no está instalada).
+- **Pantalla Principal (Feed):** El usuario ve una cuadrícula con los pósters de las películas que sí puede ver hoy mismo, con los logos de la(s) plataforma(s) donde están, y unos chips de filtro rápido por género (Comedia, Acción, Romance...; combinables). Tocar un póster abre la ficha de la película en la app de Letterboxd (o en la web si no está instalada).
 - **Actualización:** Como el catálogo cambia, el usuario puede pulsar un botón para volver a escanear su lista y actualizar los datos.
-- **Ajustes:** Si el usuario se da de baja de Netflix y se suscribe a Filmin, puede cambiarlo en los ajustes y el filtro se aplica al momento.
+- **Ajustes:** Si el usuario se da de baja de Netflix y se suscribe a Filmin, puede cambiarlo en los ajustes: cada switch se guarda automáticamente y el filtro se aplica al momento.
 
 ## 📺 Plataformas soportadas
 

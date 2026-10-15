@@ -228,9 +228,9 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
                   ? prev.tmdbId
                   : await TMDBService.searchMovie(movie.title, movie.year);
               if (tmdbId === null) {
-                return { ...movie, tmdbId: null, posterUrl: null, flatrateProviderIds: [], voteAverage: null };
+                return { ...movie, tmdbId: null, posterUrl: null, flatrateProviderIds: [], voteAverage: null, genreIds: [] };
               }
-              // Providers + nota + póster en una sola petición.
+              // Providers + nota + póster + géneros en una sola petición.
               const status = await TMDBService.getMovieStatus(tmdbId);
               return {
                 ...movie,
@@ -238,6 +238,7 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
                 posterUrl: status.posterUrl,
                 flatrateProviderIds: status.flatrateProviderIds,
                 voteAverage: status.voteAverage,
+                genreIds: status.genreIds,
               };
             } catch {
               // Fallo de red/API: mejor conservar el dato anterior que

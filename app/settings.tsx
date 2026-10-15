@@ -1,15 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ScrollView } from 'react-native';
-import {
-  Button,
-  Dialog,
-  HelperText,
-  List,
-  Portal,
-  Surface,
-  Text,
-  useTheme,
-} from 'react-native-paper';
+import { Button, Dialog, List, Portal, Surface, Text, useTheme } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { StorageService } from '../src/services/storage';
 import { DEFAULT_PLATFORMS, PlatformKey } from '../src/constants/platforms';
@@ -23,7 +14,6 @@ export default function Settings() {
   const showSnackbar = useSnackbar();
   const [username, setUsername] = useState('');
   const [platforms, setPlatforms] = useState<Record<PlatformKey, boolean>>(DEFAULT_PLATFORMS);
-  const [platformError, setPlatformError] = useState(false);
   const [confirmVisible, setConfirmVisible] = useState(false);
 
   useEffect(() => {
@@ -36,19 +26,20 @@ export default function Settings() {
     loadData();
   }, []);
 
+  // Autoguardado: cada toggle persiste al instante. El invariante del
+  // onboarding (al menos una plataforma activa) se mantiene bloqueando
+  // el apagado de la última.
   const togglePlatform = (key: PlatformKey) => {
-    setPlatformError(false);
-    setPlatforms(prev => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  const handleSave = async () => {
-    if (!Object.values(platforms).some(v => v)) {
-      setPlatformError(true);
+    const next = { ...platforms, [key]: !platforms[key] };
+    if (!Object.values(next).some((v) => v)) {
+      showSnackbar('Mantén al menos una plataforma activa');
       return;
     }
-    await StorageService.setPlatforms(platforms);
-    showSnackbar('Plataformas actualizadas');
-    router.back();
+    setPlatforms(next);
+    StorageService.setPlatforms(next).catch((e) => {
+      console.error('Error guardando plataformas:', e);
+      showSnackbar('No se pudo guardar el cambio. Inténtalo de nuevo.');
+    });
   };
 
   const handleLogout = async () => {
@@ -86,19 +77,9 @@ export default function Settings() {
         Tus plataformas
       </Text>
       <PlatformList platforms={platforms} onToggle={togglePlatform} />
-      <HelperText type="error" visible={platformError}>
-        Selecciona al menos una plataforma
-      </HelperText>
-
-      <Button
-        mode="contained"
-        onPress={handleSave}
-        contentStyle={{ height: 56 }}
-        labelStyle={{ fontSize: 16 }}
-        style={{ borderRadius: Radius.xl, marginTop: Spacing.sm }}
-      >
-        Guardar ajustes
-      </Button>
+      <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginLeft: Spacing.xs }}>
+        Los cambios se guardan automáticamente.
+      </Text>
 
       <Button
         mode="contained-tonal"

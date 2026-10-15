@@ -20,6 +20,10 @@ export interface CachedMovie extends WatchlistMovie {
   // (undefined) en cachés anteriores a este campo: se ordenan al final
   // hasta el siguiente escaneo.
   voteAverage?: number | null;
+  // Géneros TMDB; se refrescan en cada escaneo. Puede faltar (undefined)
+  // en cachés anteriores: esas películas no matchean filtros de género
+  // hasta el siguiente escaneo.
+  genreIds?: number[];
 }
 
 export interface CachedData {

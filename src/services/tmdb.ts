@@ -14,6 +14,7 @@ export interface MovieStatus {
   flatrateProviderIds: number[]; // todos los providers flatrate de ES
   voteAverage: number | null; // nota del público TMDB (null si no hay votos)
   posterUrl: string | null;
+  genreIds: number[]; // géneros TMDB (ver constants/genres.ts)
 }
 
 // Reintento único ante rate-limit (429), respetando Retry-After si viene.
@@ -73,6 +74,7 @@ export const TMDBService = {
       flatrateProviderIds: flatrate.map((provider) => provider.provider_id),
       voteAverage: hasVotes ? data.vote_average : null,
       posterUrl: data.poster_path ? `${POSTER_BASE_URL}${data.poster_path}` : null,
+      genreIds: (data.genres ?? []).map((genre: { id: number }) => genre.id),
     };
   },
 };
