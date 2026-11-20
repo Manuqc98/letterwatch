@@ -36,7 +36,7 @@ El escaneo de disponibilidad se dispara cuando el usuario presiona el botón flo
 
 1. **Comprobación de API Key:**
    * Verifica `TMDBService.isConfigured()` (clave activa fijada desde `StorageService.getTmdbApiKey()`, que solo cae al `.env` en builds `__DEV__`). Si no hay clave, muestra un diálogo con acceso a Ajustes y aborta.
-   * Si TMDB responde `401` durante el escaneo, se aborta entero (no se persiste nada) y se muestra el diálogo "API Key no válida" con acceso a Ajustes.
+   * Si TMDB responde `401` durante el escaneo, se aborta entero (no se persiste nada), la vista se resincroniza con lo persistido y se muestra el diálogo "API Key no válida" con acceso a Ajustes. Si la clave se cambió en Ajustes durante el escaneo, ese `401` es de la anterior y no se muestra.
 2. **Lanzamiento Asíncrono de JustWatch:**
    * Las peticiones a JustWatch (`getNewOnPlatforms` y `getLeavingSoon`) se disparan de inmediato en paralelo al escaneo de Letterboxd, evitando tiempos de espera en serie. Se capturan errores individualmente para permitir degradación suave.
 3. **Scraping de Letterboxd ([LetterboxdService](file:///home/manuqc98/reposPersonales/letterwatch/src/services/letterboxd.ts)):**
@@ -51,10 +51,11 @@ El escaneo de disponibilidad se dispara cuando el usuario presiona el botón flo
    * **Búsqueda Incremental:** Si la película ya tiene `tmdbId` de escaneos anteriores, **se salta la búsqueda** por nombre. Si es nueva, consulta `/search/movie`.
    * **Detalles en Petición Única:** Con el `tmdbId`, consulta `/movie/{id}?append_to_response=watch/providers` para obtener en una sola llamada los proveedores flatrate para `ES`, la nota del público (`vote_average`), el póster y los géneros.
    * **Control de Rate Limit:** El servicio reintenta automáticamente una vez si TMDB responde con código HTTP 429 respetando el header `Retry-After`.
+   * **Timeout:** Cada petición a TMDB tiene un timeout de 10 s (`TIMEOUT_MS`). Al vencer cuenta como fallo de esa película (conserva su dato anterior), así una conexión colgada no bloquea el escaneo.
    * Tras procesar cada lote, se actualiza el estado `setAllMovies` y `progress`, alimentando la barra de progreso en vivo.
 6. **Resolución de JustWatch y Protección de Epoch:**
    * Se espera el resultado de las promesas de JustWatch.
-   * Se compara el usuario actual y el `cacheEpoch` de [StorageService](file:///home/manuqc98/reposPersonales/letterwatch/src/services/storage.ts). Si el usuario cerró sesión o cambió de cuenta en Ajustes durante el escaneo, los resultados se descartan, no se guardan en disco y la vista se resincroniza con lo que haya en disco (`resyncFromStorage`). El `cacheEpoch` también se comprueba tras cada lote, para cortar antes el escaneo invalidado.
+   * Se compara el usuario actual y el `cacheEpoch` de [StorageService](file:///home/manuqc98/reposPersonales/letterwatch/src/services/storage.ts). Si el usuario cerró sesión o cambió de cuenta en Ajustes durante el escaneo, los resultados se descartan, no se guardan en disco y la vista se resincroniza con lo que haya en disco (`resyncFromStorage`). El `cacheEpoch` también se comprueba tras cada lote, para cortar antes el escaneo invalidado, y antes de mostrar cualquier diálogo de error: los errores de un escaneo invalidado son del usuario anterior y no se muestran.
    * Si todo es correcto, se actualiza el estado y se persiste en AsyncStorage mediante `StorageService.setCache()`.
 
 ```mermaid
@@ -136,10 +137,11 @@ Implementado en [app/settings.tsx](file:///home/manuqc98/reposPersonales/letterw
 * **Modificación de API Key de TMDB con Validación:**
   1. El usuario pulsa sobre la clave de TMDB (mostrada enmascarada).
   2. Se abre el diálogo modal con aviso informativo, campo para pegar la nueva clave (con ver/ocultar) y enlace directo a `themoviedb.org`.
-  3. Al pulsar *"Validar y Guardar"*, se verifica la clave en vivo con `TMDBService.validateKey(...)` contra el endpoint `/authentication`. Si es válida, se persiste en `@letterwatch_tmdb_api_key` y se actualiza `TMDBService.setApiKey(...)`. Si hay un fallo de red o timeout, avisa de comprobar la conexión sin tachar la clave de inválida.
+  3. Al pulsar *"Validar y Guardar"*, se comprueba la clave con `TMDBService.checkKey(...)` (compartido con el onboarding): si tiene forma de "API Read Access Token" (v4, JWT `eyJ…`) avisa de que hay que copiar la "API Key" (v3); si no, la valida en vivo contra `/authentication`. Si es válida, se persiste en `@letterwatch_tmdb_api_key` y se actualiza `TMDBService.setApiKey(...)`. Si hay un fallo de red o timeout, avisa de comprobar la conexión sin tachar la clave de inválida.
+  4. Las filas de usuario y clave están deshabilitadas (y muestran "Cargando…") hasta leer el almacenamiento: así los diálogos nunca comparan contra valores vacíos.
 * **Autoguardado de Plataformas:** Cada conmutación de switch guarda inmediatamente la nueva configuración en `AsyncStorage` mediante `StorageService.setPlatforms`. No existe botón "Guardar".
 * **Invariante Mínimo:** Se valida que el usuario no pueda desactivar la última plataforma activa (muestra un aviso en `SnackbarProvider`).
 * **Borrado de Datos y Reset Completo:**
-  * Al confirmar el diálogo "Borrar todo", ejecuta `StorageService.clearAll()` (limpia usuario, plataformas, caché y API key).
+  * Al confirmar el diálogo "Borrar todo", ejecuta `StorageService.clearAll()` (limpia usuario, plataformas, caché y API key). Solo si el borrado tiene éxito se anula la clave en memoria y se navega; si falla, avisa con un `Snackbar` y se queda en Ajustes.
   * Incrementa internamente `cacheEpoch`, invalidando cualquier proceso de escaneo asíncrono que estuviese en curso.
   * Ejecuta `router.dismissAll()` y `router.replace('/onboarding')` para vaciar el historial de navegación e impedir volver atrás a vistas con datos eliminados.

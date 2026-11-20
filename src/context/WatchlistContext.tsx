@@ -192,10 +192,14 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     isRefreshingRef.current = true;
     setProgress(null);
+    // Logout, "Borrar todo" o cambio de usuario en Ajustes incrementan la
+    // época: desde ese momento el escaneo ya no es del usuario actual.
+    const epochAtStart = StorageService.getCacheEpoch();
+    const invalidated = () => StorageService.getCacheEpoch() !== epochAtStart;
+    const keyAtStart = TMDBService.getApiKey();
     try {
       const username = await StorageService.getUsername();
       if (!username) return;
-      const epochAtStart = StorageService.getCacheEpoch();
 
       // JustWatch corre en paralelo al escaneo TMDB (hosts distintos).
       // El handler va adjunto DESDE LA CREACIÓN (null = fuente caída): así
@@ -214,6 +218,10 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
       const { movies: watchlist, truncated: wasTruncated } = await LetterboxdService.fetchWatchlist(username);
 
       if (watchlist.length === 0) {
+        if (invalidated()) {
+          await resyncFromStorage();
+          return;
+        }
         setDialog({
           icon: 'movie-off-outline',
           title: 'Watchlist vacía',
@@ -273,7 +281,7 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
         );
         // Invalidado a mitad: no se sigue pintando (ni consultando) la
         // watchlist de un usuario que ya no es el actual.
-        if (StorageService.getCacheEpoch() !== epochAtStart) {
+        if (invalidated()) {
           await resyncFromStorage();
           return;
         }
@@ -297,7 +305,7 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
       // Si durante el escaneo hubo un logout, "Borrar datos" o cambio de
       // usuario, estos resultados ya no son suyos: no se persisten.
       const currentUsername = await StorageService.getUsername();
-      if (currentUsername !== username || StorageService.getCacheEpoch() !== epochAtStart) {
+      if (currentUsername !== username || invalidated()) {
         await resyncFromStorage();
         return;
       }
@@ -318,6 +326,11 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
         });
       }
     } catch (error) {
+      // Abortado a mitad (p. ej. un 401): la vista vuelve a lo persistido
+      // en vez de quedarse con la lista intermedia del escaneo.
+      await resyncFromStorage().catch((e) => console.error('Error resincronizando la vista:', e));
+      // Los errores de un escaneo invalidado son del usuario anterior.
+      if (invalidated()) return;
       if (error instanceof LetterboxdError && error.code === 'USER_NOT_FOUND') {
         setDialog({
           icon: 'account-question-outline',
@@ -336,6 +349,9 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
           message: `${error.message} Comprueba tu conexión e inténtalo de nuevo.`,
         });
       } else if (axios.isAxiosError(error) && error.response?.status === 401) {
+        // Si la clave se cambió en Ajustes durante el escaneo, el 401 es de
+        // la anterior: no se acusa a la nueva.
+        if (TMDBService.getApiKey() !== keyAtStart) return;
         setDialog({
           icon: 'key-remove',
           title: 'API Key no válida',

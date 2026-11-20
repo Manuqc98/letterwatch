@@ -34,6 +34,9 @@ export default function Settings() {
   const [username, setUsername] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [platforms, setPlatforms] = useState<Record<PlatformKey, boolean>>(DEFAULT_PLATFORMS);
+  // Hasta cargar, username/apiKey valen '' y las comparaciones de "no ha
+  // cambiado" de los diálogos no son fiables: las filas no se pueden tocar.
+  const [loaded, setLoaded] = useState(false);
 
   // Diálogo de edición de usuario
   const [editUserVisible, setEditUserVisible] = useState(false);
@@ -54,19 +57,28 @@ export default function Settings() {
 
   useEffect(() => {
     async function loadData() {
-      const [storedUser, storedPlatforms, storedKey] = await Promise.all([
-        StorageService.getUsername(),
-        StorageService.getPlatforms(),
-        StorageService.getTmdbApiKey(),
-      ]);
-      if (storedUser) setUsername(storedUser);
-      if (storedPlatforms) setPlatforms(storedPlatforms);
-      if (storedKey) setApiKey(storedKey);
+      try {
+        const [storedUser, storedPlatforms, storedKey] = await Promise.all([
+          StorageService.getUsername(),
+          StorageService.getPlatforms(),
+          StorageService.getTmdbApiKey(),
+        ]);
+        if (storedUser) setUsername(storedUser);
+        if (storedPlatforms) setPlatforms(storedPlatforms);
+        if (storedKey) setApiKey(storedKey);
+        setLoaded(true);
+      } catch (e) {
+        console.error('Error cargando ajustes:', e);
+        showSnackbar('No se pudieron cargar tus ajustes. Vuelve a abrirlos.');
+      }
     }
     loadData();
-  }, []);
+  }, [showSnackbar]);
 
   const togglePlatform = (key: PlatformKey) => {
+    // Antes de cargar, `platforms` son los defaults: guardarlos pisaría la
+    // selección real del usuario.
+    if (!loaded) return;
     const next = { ...platforms, [key]: !platforms[key] };
     if (!Object.values(next).some((v) => v)) {
       showSnackbar('Mantén al menos una plataforma activa');
@@ -148,18 +160,10 @@ export default function Settings() {
     setIsValidatingKey(true);
     setKeyError(false);
     try {
-      // null = no se pudo contactar con TMDB (distinto de "clave inválida").
-      const valid = await TMDBService.validateKey(trimmed).catch((e) => {
-        console.error('Error validando la clave de TMDB:', e);
-        return null;
-      });
-      if (!valid) {
+      const keyProblem = await TMDBService.checkKey(trimmed);
+      if (keyProblem) {
         setKeyError(true);
-        setKeyErrorMsg(
-          valid === null
-            ? 'Error conectando con TMDB. Comprueba tu conexión.'
-            : 'La clave no es válida en TMDB. Revisa que esté bien copiada.'
-        );
+        setKeyErrorMsg(keyProblem);
         return;
       }
 
@@ -181,8 +185,18 @@ export default function Settings() {
   };
 
   const handleLogout = async () => {
+    try {
+      await StorageService.clearAll();
+    } catch (e) {
+      console.error('Error borrando los datos:', e);
+      showSnackbar('No se pudieron borrar los datos. Inténtalo de nuevo.');
+      return;
+    }
+    // Solo tras borrar el disco: si fallase, la clave en memoria seguiría
+    // casando con la guardada.
     TMDBService.setApiKey(null);
-    await StorageService.clearAll();
+    // dismissAll vacía el stack hasta la raíz antes de reemplazarla:
+    // así el back de Android no puede volver a una pantalla con datos borrados.
     router.dismissAll();
     router.replace('/onboarding');
   };
@@ -204,19 +218,21 @@ export default function Settings() {
         }}
       >
         <List.Item
-          title={username || 'Sin configurar'}
+          title={loaded ? username || 'Sin configurar' : 'Cargando…'}
           description="Usuario de Letterboxd (Toca para modificar)"
           left={(props) => <List.Icon {...props} icon="account-circle-outline" />}
           right={(props) => <List.Icon {...props} icon="pencil-outline" />}
           onPress={handleOpenEditUser}
+          disabled={!loaded}
         />
         <Divider />
         <List.Item
-          title={maskApiKey(apiKey)}
+          title={loaded ? maskApiKey(apiKey) : 'Cargando…'}
           description="API Key de TMDB (Toca para modificar)"
           left={(props) => <List.Icon {...props} icon="key-variant" />}
           right={(props) => <List.Icon {...props} icon="pencil-outline" />}
           onPress={handleOpenEditKey}
+          disabled={!loaded}
         />
       </Surface>
 

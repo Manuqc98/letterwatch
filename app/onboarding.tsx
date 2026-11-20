@@ -98,18 +98,10 @@ export default function Onboarding() {
     setIsValidating(true);
     setKeyError(false);
     try {
-      // null = no se pudo contactar con TMDB (distinto de "clave inválida").
-      const valid = await TMDBService.validateKey(trimmedKey).catch((e) => {
-        console.error('Error validando la clave de TMDB:', e);
-        return null;
-      });
-      if (!valid) {
+      const keyProblem = await TMDBService.checkKey(trimmedKey);
+      if (keyProblem) {
         setKeyError(true);
-        setKeyErrorMsg(
-          valid === null
-            ? 'No se pudo conectar con TMDB. Comprueba tu conexión a internet.'
-            : 'La clave no es válida en TMDB. Revisa que esté bien copiada.'
-        );
+        setKeyErrorMsg(keyProblem);
         scrollToSection('key');
         return;
       }

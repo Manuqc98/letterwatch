@@ -40,11 +40,13 @@ Este documento reúne las restricciones de diseño, comportamientos no evidentes
 ### D. Rate Limiting de TMDB (HTTP 429)
 * TMDB permite aproximadamente 40-50 peticiones por segundo. Con lotes de 20 películas simultáneas se mantiene un margen seguro, pero pueden producirse picos.
 * **Solución:** [src/services/tmdb.ts](file:///home/manuqc98/reposPersonales/letterwatch/src/services/tmdb.ts#L23-L35) intercepta errores `429`, lee el encabezado `retry-after` y espera el tiempo correspondiente antes de reintentar la llamada. Si la llamada reintentada fallara, la película conserva sus datos previos en lugar de marcarse como "no disponible".
+* **Gotcha de timeouts:** El cliente HTTP de React Native en Android (OkHttp) no aplica timeout por defecto: sin el `TIMEOUT_MS` de `getWithRetry`, una conexión medio caída dejaría un lote (y el escaneo entero, con el FAB bloqueado) esperando para siempre.
 
 ### E. Clave TMDB Parametrizable por Usuario
 * Anteriormente la clave iba fija en `EXPO_PUBLIC_TMDB_API_KEY`. Para permitir la distribución directa de APKs a otros usuarios, la aplicación permite a cada usuario introducir y validar su propia clave gratuita desde el Onboarding y desde Ajustes (`@letterwatch_tmdb_api_key`).
 * Si el dispositivo no tiene clave en `AsyncStorage`, `StorageService.getTmdbApiKey()` usa `EXPO_PUBLIC_TMDB_API_KEY` como fallback **solo en builds de desarrollo (`__DEV__`)**. En un APK distribuido la clave del desarrollador nunca se precarga en el onboarding ni sobrevive a "Borrar todo". Aun así, cualquier `EXPO_PUBLIC_*` definida al compilar se empaqueta en el bundle: no la registres como variable de entorno de EAS.
 * `TMDBService` no lee el `.env`: solo usa la clave activa que le fijan `WatchlistContext`, el onboarding y Ajustes.
+* **Gotcha:** La página de API de TMDB muestra a la vez la "API Key" (v3, 32 caracteres hex) y el "API Read Access Token" (v4, un JWT largo que empieza por `eyJ`). La app solo admite la v3; `TMDBService.checkKey` detecta el token v4 y da un mensaje específico en vez de "clave no válida".
 
 ---
 
