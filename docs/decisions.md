@@ -19,7 +19,7 @@ Este documento registra las decisiones técnicas clave tomadas durante el desarr
 * **Contexto:** Se requiere conocer qué plataformas de streaming tienen incluida cada película en España (`ES`), además de obtener el póster oficial, año, géneros y nota del público.
 * **Decisión:** Emplear la API pública de **The Movie Database (TMDB)** (`/movie/{id}?append_to_response=watch/providers`).
 * **Justificación:** TMDB integra directamente los datos sindicados de JustWatch para streaming internacional, ofrece una API REST documentada, notas de usuarios, pósters en diversas resoluciones y soporte para agrupar llamadas con `append_to_response`.
-* **Consecuencias:** Requiere una clave de API pública gratuita de TMDB configurada en las variables de entorno (`EXPO_PUBLIC_TMDB_API_KEY`).
+* **Consecuencias:** Requiere una clave de API gratuita de TMDB (v3). Desde ADR-008 la introduce cada usuario en el onboarding; `EXPO_PUBLIC_TMDB_API_KEY` queda solo como atajo en builds de desarrollo.
 
 ---
 
@@ -77,6 +77,6 @@ Este documento registra las decisiones técnicas clave tomadas durante el desarr
 * **Contexto:** Para distribuir la app como APK independiente a terceros sin requerir una cuenta centralizada ni compartir una API Key de desarrollo de TMDB, cada usuario debe poder introducir su propia clave de TMDB y su usuario de Letterboxd, pudiendo modificarlos en cualquier momento desde Ajustes.
 * **Decisión:**
   * Solicitar y validar la clave de TMDB en tiempo real contra `/authentication` en el Onboarding y en Ajustes.
-  * Almacenar la clave de forma privada y local en `@letterwatch_tmdb_api_key`.
-  * Exigir confirmación mediante un pop-up modal antes de permitir editar el usuario de Letterboxd (advirtiendo del reset de la caché) o la clave de TMDB.
+  * Almacenar la clave de forma privada y local en `@letterwatch_tmdb_api_key`. `StorageService` es su única dueña (con espejo en memoria) y `TMDBService` la lee de ahí en cada petición.
+  * Exigir confirmación mediante un pop-up modal antes de permitir editar el usuario de Letterboxd (advirtiendo de que el feed se vaciará hasta actualizar) o la clave de TMDB.
 * **Justificación:** Garantiza autonomía completa para cualquier usuario que instale el APK, previene modificaciones accidentales de credenciales y asegura que no se mezclen datos cacheados entre usuarios distintos.

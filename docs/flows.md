@@ -12,7 +12,7 @@ Cuando el usuario inicia la aplicación:
 3. `GuardedTabs` evalúa el valor `configured` provisto por [WatchlistContext.tsx](file:///home/manuqc98/reposPersonales/letterwatch/src/context/WatchlistContext.tsx):
    * `configured === null`: Se muestra un `ActivityIndicator` a pantalla completa mientras se leen las claves `@letterwatch_username`, `@letterwatch_platforms` y `@letterwatch_tmdb_api_key` desde [StorageService](file:///home/manuqc98/reposPersonales/letterwatch/src/services/storage.ts).
    * `configured === false`: No hay usuario, plataformas o clave de TMDB guardadas. Se dispara `<Redirect href="/onboarding" />`.
-   * `configured === true`: El usuario y servicios están configurados. Se inicializa `TMDBService.setApiKey(...)` y se renderiza el `Tabs` con las tres vistas principales (`news`, `watchout`, `index`).
+   * `configured === true`: El usuario y servicios están configurados. Se renderiza el `Tabs` con las tres vistas principales (`news`, `watchout`, `index`).
 
 ```mermaid
 flowchart TD
@@ -35,8 +35,8 @@ El escaneo de disponibilidad se dispara cuando el usuario presiona el botón flo
 ### Fases del Escaneo:
 
 1. **Comprobación de API Key:**
-   * Verifica `TMDBService.isConfigured()` (clave activa fijada desde `StorageService.getTmdbApiKey()`, que solo cae al `.env` en builds `__DEV__`). Si no hay clave, muestra un diálogo con acceso a Ajustes y aborta.
-   * Si TMDB responde `401` durante el escaneo, se aborta entero (no se persiste nada), la vista se resincroniza con lo persistido y se muestra el diálogo "API Key no válida" con acceso a Ajustes. Si la clave se cambió en Ajustes durante el escaneo, ese `401` es de la anterior y no se muestra.
+   * Lee la clave con `StorageService.getTmdbApiKey()` (espejo en memoria; solo cae al `.env` en builds `__DEV__`). Si no hay clave, lanza `TmdbError('NOT_CONFIGURED')`: diálogo con acceso a Ajustes y aborta.
+   * Si TMDB responde `401` durante el escaneo (`TMDBService` lo convierte en `TmdbError('INVALID_KEY')`), se aborta entero (no se persiste nada), la vista se resincroniza con lo persistido y se muestra el diálogo "API Key no válida" con acceso a Ajustes. Si la clave se cambió en Ajustes durante el escaneo, ese `401` es de la anterior y no se muestra.
 2. **Lanzamiento Asíncrono de JustWatch:**
    * Las peticiones a JustWatch (`getNewOnPlatforms` y `getLeavingSoon`) se disparan de inmediato en paralelo al escaneo de Letterboxd, evitando tiempos de espera en serie. Se capturan errores individualmente para permitir degradación suave.
 3. **Scraping de Letterboxd ([LetterboxdService](file:///home/manuqc98/reposPersonales/letterwatch/src/services/letterboxd.ts)):**
@@ -133,11 +133,11 @@ Implementado en [app/settings.tsx](file:///home/manuqc98/reposPersonales/letterw
 * **Modificación de Usuario de Letterboxd con Advertencia:**
   1. El usuario pulsa sobre la fila de su cuenta.
   2. Se abre un diálogo modal que incluye la advertencia de que cambiar de usuario invalidará la caché previa y el campo para introducir el nuevo usuario.
-  3. Si el usuario no ha cambiado, se cierra sin tocar la caché. Si cambia, actualiza `@letterwatch_username`, ejecuta `StorageService.clearCache()` y notifica con un `Snackbar`.
+  3. Si el usuario no ha cambiado, se cierra sin tocar la caché. Si cambia, actualiza `@letterwatch_username`, ejecuta `StorageService.invalidateScans()` (corta el escaneo en curso; la caché no se borra porque el feed ya ignora la de otro usuario) y notifica con un `Snackbar`.
 * **Modificación de API Key de TMDB con Validación:**
   1. El usuario pulsa sobre la clave de TMDB (mostrada enmascarada).
   2. Se abre el diálogo modal con aviso informativo, campo para pegar la nueva clave (con ver/ocultar) y enlace directo a `themoviedb.org`.
-  3. Al pulsar *"Validar y Guardar"*, se comprueba la clave con `TMDBService.checkKey(...)` (compartido con el onboarding): si tiene forma de "API Read Access Token" (v4, JWT `eyJ…`) avisa de que hay que copiar la "API Key" (v3); si no, la valida en vivo contra `/authentication`. Si es válida, se persiste en `@letterwatch_tmdb_api_key` y se actualiza `TMDBService.setApiKey(...)`. Si hay un fallo de red o timeout, avisa de comprobar la conexión sin tachar la clave de inválida.
+  3. Al pulsar *"Validar y Guardar"*, se comprueba la clave con `TMDBService.checkKey(...)` (compartido con el onboarding): si tiene forma de "API Read Access Token" (v4, JWT `eyJ…`) avisa de que hay que copiar la "API Key" (v3); si no, la valida en vivo contra `/authentication`. Si es válida, se persiste con `StorageService.setTmdbApiKey(...)`, que actualiza también el espejo en memoria del que leen las peticiones del escaneo. Si hay un fallo de red o timeout, avisa de comprobar la conexión sin tachar la clave de inválida.
   4. Las filas de usuario y clave están deshabilitadas (y muestran "Cargando…") hasta leer el almacenamiento: así los diálogos nunca comparan contra valores vacíos.
 * **Autoguardado de Plataformas:** Cada conmutación de switch guarda inmediatamente la nueva configuración en `AsyncStorage` mediante `StorageService.setPlatforms`. No existe botón "Guardar".
 * **Invariante Mínimo:** Se valida que el usuario no pueda desactivar la última plataforma activa (muestra un aviso en `SnackbarProvider`).

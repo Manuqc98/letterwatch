@@ -11,8 +11,7 @@ import { Button, Dialog, Portal, Text } from 'react-native-paper';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { StorageService, CachedData, CachedMovie, STALE_AFTER_DAYS } from '../services/storage';
 import { LetterboxdService, LetterboxdError } from '../services/letterboxd';
-import axios from 'axios';
-import { TMDBService } from '../services/tmdb';
+import { TMDBService, TmdbError } from '../services/tmdb';
 import { JustWatchService, JustWatchEntry } from '../services/justwatch';
 import { PlatformKey, DEFAULT_PLATFORMS, matchPlatforms } from '../constants/platforms';
 
@@ -134,10 +133,12 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
       let active = true;
       (async () => {
         try {
-          const username = await StorageService.getUsername();
-          const platforms = await StorageService.getPlatforms();
-          const apiKey = await StorageService.getTmdbApiKey();
-          const cache = await StorageService.getCache();
+          const [username, platforms, apiKey, cache] = await Promise.all([
+            StorageService.getUsername(),
+            StorageService.getPlatforms(),
+            StorageService.getTmdbApiKey(),
+            StorageService.getCache(),
+          ]);
           if (!active) return;
 
           if (!username || !platforms || !apiKey) {
@@ -146,7 +147,6 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
           }
           setConfigured(true);
           setUserPlatforms(platforms);
-          TMDBService.setApiKey(apiKey);
 
           // Con un escaneo en marcha no se pisa la lista con la caché vieja:
           // el propio escaneo actualizará el estado al terminar.
@@ -176,18 +176,6 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
 
   const refresh = async () => {
     if (isRefreshingRef.current) return;
-    if (!TMDBService.isConfigured()) {
-      setDialog({
-        icon: 'key-alert-outline',
-        title: 'Falta la API key',
-        message: 'Configura tu API Key de TMDB en los Ajustes para poder escanear la disponibilidad.',
-        actions: [
-          { label: 'Cerrar' },
-          { label: 'Ir a Ajustes', onPress: () => router.navigate('/settings') },
-        ],
-      });
-      return;
-    }
 
     setIsLoading(true);
     isRefreshingRef.current = true;
@@ -196,8 +184,12 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
     // época: desde ese momento el escaneo ya no es del usuario actual.
     const epochAtStart = StorageService.getCacheEpoch();
     const invalidated = () => StorageService.getCacheEpoch() !== epochAtStart;
-    const keyAtStart = TMDBService.getApiKey();
+    // Si la clave se cambia en Ajustes durante el escaneo, un 401 posterior
+    // es de la anterior y no se acusa a la nueva.
+    let keyAtStart: string | null = null;
     try {
+      keyAtStart = await StorageService.getTmdbApiKey();
+      if (!keyAtStart) throw new TmdbError('NOT_CONFIGURED', 'No hay API Key de TMDB configurada.');
       const username = await StorageService.getUsername();
       if (!username) return;
 
@@ -269,9 +261,8 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
                 genreIds: status.genreIds,
               };
             } catch (err) {
-              if (axios.isAxiosError(err) && err.response?.status === 401) {
-                throw err;
-              }
+              // Clave rechazada o ausente: falla todo el escaneo, no esta película.
+              if (err instanceof TmdbError) throw err;
               // Fallo de red/API: mejor conservar el dato anterior que
               // cachear un falso "no disponible".
               failedCount++;
@@ -348,14 +339,22 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
           title: 'Sin conexión con Letterboxd',
           message: `${error.message} Comprueba tu conexión e inténtalo de nuevo.`,
         });
-      } else if (axios.isAxiosError(error) && error.response?.status === 401) {
-        // Si la clave se cambió en Ajustes durante el escaneo, el 401 es de
-        // la anterior: no se acusa a la nueva.
-        if (TMDBService.getApiKey() !== keyAtStart) return;
+      } else if (error instanceof TmdbError && error.code === 'INVALID_KEY') {
+        if ((await StorageService.getTmdbApiKey()) !== keyAtStart) return;
         setDialog({
           icon: 'key-remove',
           title: 'API Key no válida',
           message: 'TMDB ha rechazado tu clave de API (401 Unauthorized). Ve a Ajustes y compruébala.',
+          actions: [
+            { label: 'Cerrar' },
+            { label: 'Ir a Ajustes', onPress: () => router.navigate('/settings') },
+          ],
+        });
+      } else if (error instanceof TmdbError) {
+        setDialog({
+          icon: 'key-alert-outline',
+          title: 'Falta la API key',
+          message: 'Configura tu API Key de TMDB en los Ajustes para poder escanear la disponibilidad.',
           actions: [
             { label: 'Cerrar' },
             { label: 'Ir a Ajustes', onPress: () => router.navigate('/settings') },

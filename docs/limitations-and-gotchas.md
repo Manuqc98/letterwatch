@@ -34,7 +34,7 @@ Este documento reúne las restricciones de diseño, comportamientos no evidentes
 
 ### C. Condición de Carrera en Borrado de Datos (`cacheEpoch`)
 * **Gotcha:** Un escaneo de watchlist puede tardar varios segundos. Si el usuario pulsa *"Borrar todos los datos y reiniciar"* o cambia de usuario en Ajustes mientras un escaneo está en curso, la promesa de red podría resolver segundos más tarde y sobreescribir el almacenamiento con los datos del usuario anterior.
-* **Solución:** [StorageService](file:///home/manuqc98/reposPersonales/letterwatch/src/services/storage.ts) implementa un contador en memoria `cacheEpoch` que incrementan `clearAll()` y `clearCache()`. Al iniciar el escaneo se guarda el epoch; si varía (se comprueba tras cada lote y al final), los datos se descartan sin guardarse en `AsyncStorage`.
+* **Solución:** [StorageService](file:///home/manuqc98/reposPersonales/letterwatch/src/services/storage.ts) implementa un contador en memoria `cacheEpoch` que incrementan `clearAll()` y `invalidateScans()` (cambio de usuario). Al iniciar el escaneo se guarda el epoch; si varía (se comprueba tras cada lote y al final), los datos se descartan sin guardarse en `AsyncStorage`.
 * **Gotcha adicional:** Al volver de Ajustes con un escaneo en marcha, el focus de `(tabs)` no recarga la caché (el escaneo "es dueño" del estado). Por eso el escaneo invalidado no se limita a no persistir: resincroniza la vista con lo que haya en disco (`resyncFromStorage`), o seguiría mostrando la watchlist del usuario anterior.
 
 ### D. Rate Limiting de TMDB (HTTP 429)
@@ -45,7 +45,7 @@ Este documento reúne las restricciones de diseño, comportamientos no evidentes
 ### E. Clave TMDB Parametrizable por Usuario
 * Anteriormente la clave iba fija en `EXPO_PUBLIC_TMDB_API_KEY`. Para permitir la distribución directa de APKs a otros usuarios, la aplicación permite a cada usuario introducir y validar su propia clave gratuita desde el Onboarding y desde Ajustes (`@letterwatch_tmdb_api_key`).
 * Si el dispositivo no tiene clave en `AsyncStorage`, `StorageService.getTmdbApiKey()` usa `EXPO_PUBLIC_TMDB_API_KEY` como fallback **solo en builds de desarrollo (`__DEV__`)**. En un APK distribuido la clave del desarrollador nunca se precarga en el onboarding ni sobrevive a "Borrar todo". Aun así, cualquier `EXPO_PUBLIC_*` definida al compilar se empaqueta en el bundle: no la registres como variable de entorno de EAS.
-* `TMDBService` no lee el `.env`: solo usa la clave activa que le fijan `WatchlistContext`, el onboarding y Ajustes.
+* `TMDBService` no guarda la clave: la pide a `StorageService.getTmdbApiKey()` en cada petición. Las lecturas salen de un espejo en memoria que solo actualizan los métodos de escritura de `StorageService` tras escribir en disco (si una escritura falla, el espejo se invalida y se relee), así que un cambio en Ajustes se aplica al instante sin sincronizar nada a mano.
 * **Gotcha:** La página de API de TMDB muestra a la vez la "API Key" (v3, 32 caracteres hex) y el "API Read Access Token" (v4, un JWT largo que empieza por `eyJ`). La app solo admite la v3; `TMDBService.checkKey` detecta el token v4 y da un mensaje específico en vez de "clave no válida".
 
 ---

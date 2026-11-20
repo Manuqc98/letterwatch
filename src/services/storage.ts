@@ -51,10 +51,28 @@ async function readJson(key: string): Promise<any | null> {
   }
 }
 
-// Época de la caché: clearAll la incrementa. Un escaneo en vuelo captura la
-// época al empezar y no persiste si cambió — evita que un escaneo huérfano
-// resucite datos tras "Borrar datos", incluso reintroduciendo el mismo usuario.
+// Época de la caché: clearAll e invalidateScans la incrementan. Un escaneo en
+// vuelo captura la época al empezar y no persiste si cambió — evita que un
+// escaneo huérfano resucite datos tras "Borrar datos" o un cambio de usuario,
+// incluso reintroduciendo el mismo usuario.
 let cacheEpoch = 0;
+
+// Espejo en memoria de la clave de TMDB: el escaneo la consulta en cada
+// petición y no debe ir a disco cada vez. Solo lo actualizan los métodos de
+// este servicio que escriben la clave, así que no puede desincronizarse del
+// disco. undefined = aún no leída (o una escritura falló y hay que releer).
+let tmdbKeyMirror: string | null | undefined;
+
+// Escribe en disco y actualiza el espejo solo si la escritura fue bien.
+async function writeTmdbKey(write: Promise<void>, next: string | null): Promise<void> {
+  try {
+    await write;
+    tmdbKeyMirror = next;
+  } catch (e) {
+    tmdbKeyMirror = undefined;
+    throw e;
+  }
+}
 
 export const StorageService = {
   getCacheEpoch(): number {
@@ -114,22 +132,29 @@ export const StorageService = {
     };
     return AsyncStorage.setItem(CACHE_KEY, JSON.stringify(data));
   },
-  async clearCache(): Promise<void> {
+  // Cambio de usuario: invalida el escaneo en curso sin borrar la caché, que
+  // ya se ignora por pertenecer a otro usuario (y vuelve a valer si se
+  // regresa a él, p. ej. tras corregir una errata).
+  invalidateScans(): void {
     cacheEpoch++;
-    return AsyncStorage.removeItem(CACHE_KEY);
   },
   async getTmdbApiKey(): Promise<string | null> {
-    const stored = await AsyncStorage.getItem(TMDB_API_KEY_STORAGE);
-    if (stored && stored.trim().length > 0) return stored.trim();
+    if (tmdbKeyMirror === undefined) {
+      const stored = await AsyncStorage.getItem(TMDB_API_KEY_STORAGE);
+      // Una escritura terminada mientras se leía manda sobre esta lectura.
+      if (tmdbKeyMirror === undefined) tmdbKeyMirror = stored || null;
+    }
+    if (tmdbKeyMirror) return tmdbKeyMirror;
     // Fallback a la clave del .env SOLO en desarrollo: en un build
     // distribuido la clave del desarrollador no debe precargarse en el
     // onboarding ni sobrevivir a "Borrar todo".
     if (!__DEV__) return null;
-    const envKey = process.env.EXPO_PUBLIC_TMDB_API_KEY;
-    return envKey && envKey.trim().length > 0 ? envKey.trim() : null;
+    const envKey = process.env.EXPO_PUBLIC_TMDB_API_KEY?.trim();
+    return envKey || null;
   },
+  // Las claves llegan ya recortadas desde los formularios.
   async setTmdbApiKey(apiKey: string): Promise<void> {
-    return AsyncStorage.setItem(TMDB_API_KEY_STORAGE, apiKey.trim());
+    return writeTmdbKey(AsyncStorage.setItem(TMDB_API_KEY_STORAGE, apiKey), apiKey);
   },
   // Guarda la configuración del onboarding en una sola escritura: un fallo
   // a medias no deja un usuario sin clave (o al revés) en disco.
@@ -138,17 +163,20 @@ export const StorageService = {
     apiKey: string,
     platforms: Record<PlatformKey, boolean>
   ): Promise<void> {
-    return AsyncStorage.multiSet([
-      [USERNAME_KEY, username],
-      [TMDB_API_KEY_STORAGE, apiKey.trim()],
-      [PLATFORMS_KEY, JSON.stringify(platforms)],
-    ]);
-  },
-  async clearTmdbApiKey(): Promise<void> {
-    return AsyncStorage.removeItem(TMDB_API_KEY_STORAGE);
+    return writeTmdbKey(
+      AsyncStorage.multiSet([
+        [USERNAME_KEY, username],
+        [TMDB_API_KEY_STORAGE, apiKey],
+        [PLATFORMS_KEY, JSON.stringify(platforms)],
+      ]),
+      apiKey
+    );
   },
   async clearAll(): Promise<void> {
     cacheEpoch++;
-    return AsyncStorage.multiRemove([USERNAME_KEY, PLATFORMS_KEY, CACHE_KEY, TMDB_API_KEY_STORAGE]);
+    return writeTmdbKey(
+      AsyncStorage.multiRemove([USERNAME_KEY, PLATFORMS_KEY, CACHE_KEY, TMDB_API_KEY_STORAGE]),
+      null
+    );
   },
 };

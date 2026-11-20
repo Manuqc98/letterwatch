@@ -1,9 +1,5 @@
 import axios from 'axios';
-
-// Clave activa: la fijan WatchlistContext (al enfocar), el onboarding y
-// Ajustes a partir de StorageService.getTmdbApiKey, que es quien decide el
-// fallback al .env (solo en desarrollo).
-let activeApiKey: string | null = null;
+import { StorageService } from './storage';
 
 const BASE_URL = 'https://api.themoviedb.org/3';
 const POSTER_BASE_URL = 'https://image.tmdb.org/t/p/w500';
@@ -13,8 +9,51 @@ const POSTER_BASE_URL = 'https://image.tmdb.org/t/p/w500';
 const TIMEOUT_MS = 10000;
 const VALIDATE_TIMEOUT_MS = 6000;
 
-function getEffectiveApiKey(): string | null {
-  return activeApiKey && activeApiKey.length > 0 ? activeApiKey : null;
+// Errores que invalidan el escaneo entero, no solo una película: el llamante
+// los distingue de un fallo puntual de red sin conocer los códigos HTTP.
+export type TmdbErrorCode = 'INVALID_KEY' | 'NOT_CONFIGURED';
+
+export class TmdbError extends Error {
+  code: TmdbErrorCode;
+  constructor(code: TmdbErrorCode, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
+// La clave vive solo en StorageService (con espejo en memoria): leerla en
+// cada petición sigue cualquier cambio hecho en Ajustes sin sincronizar nada.
+async function requireApiKey(): Promise<string> {
+  const key = await StorageService.getTmdbApiKey();
+  if (!key) throw new TmdbError('NOT_CONFIGURED', 'No hay API Key de TMDB configurada.');
+  return key;
+}
+
+async function tmdbGet(url: string, params: Record<string, unknown>) {
+  try {
+    return await axios.get(url, { params, timeout: TIMEOUT_MS });
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      throw new TmdbError('INVALID_KEY', 'TMDB ha rechazado la API Key.');
+    }
+    throw error;
+  }
+}
+
+// 401 = clave rechazada; cualquier otro error = la clave no se pudo comprobar.
+async function isValidKey(apiKey: string): Promise<boolean> {
+  try {
+    const response = await axios.get(`${BASE_URL}/authentication`, {
+      params: { api_key: apiKey },
+      timeout: VALIDATE_TIMEOUT_MS,
+    });
+    return response.data?.success === true;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      return false;
+    }
+    throw error;
+  }
 }
 
 interface TmdbProvider {
@@ -35,13 +74,13 @@ export interface MovieStatus {
 // y el llamante conserva el dato anterior de esa película.
 async function getWithRetry(url: string, params: Record<string, unknown>) {
   try {
-    return await axios.get(url, { params, timeout: TIMEOUT_MS });
+    return await tmdbGet(url, params);
   } catch (error) {
     if (axios.isAxiosError(error) && error.response?.status === 429) {
       const retryAfter = Number(error.response.headers?.['retry-after']);
       const waitMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 1100;
       await new Promise((resolve) => setTimeout(resolve, waitMs));
-      return axios.get(url, { params, timeout: TIMEOUT_MS });
+      return tmdbGet(url, params);
     }
     throw error;
   }
@@ -49,44 +88,18 @@ async function getWithRetry(url: string, params: Record<string, unknown>) {
 
 // Los errores de red/API se propagan al llamante: un fallo de TMDB no es lo
 // mismo que "película no encontrada" o "sin plataformas", y no debe cachearse
-// como tal.
+// como tal. Una clave rechazada o ausente llega como TmdbError.
 export const TMDBService = {
-  setApiKey(key: string | null) {
-    activeApiKey = key ? key.trim() : null;
-  },
-  getApiKey(): string | null {
-    return getEffectiveApiKey();
-  },
-  isConfigured(): boolean {
-    return !!getEffectiveApiKey();
-  },
-  async validateKey(apiKey: string): Promise<boolean> {
-    const trimmed = apiKey.trim();
-    if (!trimmed) return false;
-    try {
-      const response = await axios.get(`${BASE_URL}/authentication`, {
-        params: { api_key: trimmed },
-        timeout: VALIDATE_TIMEOUT_MS,
-      });
-      return response.data?.success === true;
-    } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 401) {
-        return false;
-      }
-      throw error;
-    }
-  },
-  // Comprobación de la clave para onboarding y Ajustes. Devuelve el mensaje
-  // de error para el usuario, o null si es válida.
+  // Comprobación de la clave (ya recortada) para onboarding y Ajustes.
+  // Devuelve el mensaje de error para el usuario, o null si es válida.
   async checkKey(apiKey: string): Promise<string | null> {
-    const trimmed = apiKey.trim();
     // La página de API de TMDB muestra antes el "API Read Access Token" (v4,
     // un JWT) que la "API Key" (v3) que usa la app: es el error más común.
-    if (trimmed.startsWith('eyJ') && trimmed.split('.').length === 3) {
+    if (apiKey.startsWith('eyJ') && apiKey.split('.').length === 3) {
       return 'Has pegado el "API Read Access Token". Copia la "API Key", la clave corta de 32 caracteres.';
     }
     try {
-      const valid = await TMDBService.validateKey(trimmed);
+      const valid = await isValidKey(apiKey);
       return valid ? null : 'La clave no es válida en TMDB. Revisa que esté bien copiada.';
     } catch (e) {
       console.error('Error validando la clave de TMDB:', e);
@@ -98,10 +111,8 @@ export const TMDBService = {
   // nuevas: el id se cachea para siempre.
   // null = TMDB respondió bien pero no hay resultados.
   async searchMovie(title: string, year?: string): Promise<number | null> {
-    const key = getEffectiveApiKey();
-    if (!key) throw new Error('TMDB_NOT_CONFIGURED');
     const response = await getWithRetry(`${BASE_URL}/search/movie`, {
-      api_key: key,
+      api_key: await requireApiKey(),
       query: title,
       language: 'es-ES',
       ...(year ? { year } : {}),
@@ -114,10 +125,8 @@ export const TMDBService = {
   // nota del público y póster (append_to_response combina detalles+providers).
   // El filtrado por las plataformas del usuario se hace al pintar la lista.
   async getMovieStatus(tmdbId: number): Promise<MovieStatus> {
-    const key = getEffectiveApiKey();
-    if (!key) throw new Error('TMDB_NOT_CONFIGURED');
     const response = await getWithRetry(`${BASE_URL}/movie/${tmdbId}`, {
-      api_key: key,
+      api_key: await requireApiKey(),
       language: 'es-ES',
       append_to_response: 'watch/providers',
     });

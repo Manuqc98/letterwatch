@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, View } from 'react-native';
+import { ScrollView } from 'react-native';
 import { Button, HelperText, Text, TextInput, useTheme } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { openURL } from 'expo-linking';
 import { StorageService } from '../src/services/storage';
 import { TMDBService } from '../src/services/tmdb';
 import { DEFAULT_PLATFORMS, PlatformKey } from '../src/constants/platforms';
 import { Radius, Spacing } from '../src/constants/theme';
 import { PlatformList } from '../src/components/PlatformList';
+import { ApiKeyInput } from '../src/components/ApiKeyInput';
 import { useSnackbar } from '../src/components/SnackbarProvider';
 
 export default function Onboarding() {
@@ -18,11 +18,9 @@ export default function Onboarding() {
   const showSnackbar = useSnackbar();
   const [username, setUsername] = useState('');
   const [apiKey, setApiKey] = useState('');
-  const [showApiKey, setShowApiKey] = useState(false);
   const [platforms, setPlatforms] = useState<Record<PlatformKey, boolean>>(DEFAULT_PLATFORMS);
   const [userError, setUserError] = useState(false);
-  const [keyError, setKeyError] = useState(false);
-  const [keyErrorMsg, setKeyErrorMsg] = useState('');
+  const [keyErrorMsg, setKeyErrorMsg] = useState<string | null>(null);
   const [platformError, setPlatformError] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
@@ -65,14 +63,6 @@ export default function Onboarding() {
     setPlatforms((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const handleOpenTmdb = async () => {
-    try {
-      await openURL('https://www.themoviedb.org/settings/api');
-    } catch (e) {
-      console.error('No se pudo abrir el enlace de TMDB:', e);
-    }
-  };
-
   const handleSave = async () => {
     const trimmedUser = username.trim();
     const trimmedKey = apiKey.trim();
@@ -81,10 +71,7 @@ export default function Onboarding() {
     const platformMissing = !Object.values(platforms).some((v) => v);
 
     if (userMissing) setUserError(true);
-    if (keyMissing) {
-      setKeyError(true);
-      setKeyErrorMsg('Introduce tu API Key de TMDB');
-    }
+    if (keyMissing) setKeyErrorMsg('Introduce tu API Key de TMDB');
     if (platformMissing) setPlatformError(true);
 
     if (userMissing || keyMissing || platformMissing) {
@@ -96,11 +83,10 @@ export default function Onboarding() {
     }
 
     setIsValidating(true);
-    setKeyError(false);
+    setKeyErrorMsg(null);
     try {
       const keyProblem = await TMDBService.checkKey(trimmedKey);
       if (keyProblem) {
-        setKeyError(true);
         setKeyErrorMsg(keyProblem);
         scrollToSection('key');
         return;
@@ -113,7 +99,6 @@ export default function Onboarding() {
         showSnackbar('No se pudo guardar la configuración. Inténtalo de nuevo.');
         return;
       }
-      TMDBService.setApiKey(trimmedKey);
 
       router.replace('/');
     } finally {
@@ -126,6 +111,8 @@ export default function Onboarding() {
       ref={scrollRef}
       style={{ flex: 1 }}
       keyboardShouldPersistTaps="handled"
+      // iOS: amplía el rango de scroll cuando el teclado está abierto
+      // (en Android lo resuelve el softwareKeyboardLayoutMode=resize por defecto)
       automaticallyAdjustKeyboardInsets
       contentContainerStyle={{
         padding: Spacing.lg,
@@ -181,49 +168,18 @@ export default function Onboarding() {
       >
         2. API Key de The Movie Database (TMDB)
       </Text>
-      <TextInput
-        mode="outlined"
+      <ApiKeyInput
         label="API Key de TMDB (v3 auth)"
         placeholder="p. ej. a1b2c3d4e5f6..."
         value={apiKey}
         onChangeText={(text) => {
-          setKeyError(false);
+          setKeyErrorMsg(null);
           setApiKey(text);
         }}
-        secureTextEntry={!showApiKey}
-        autoCapitalize="none"
-        autoCorrect={false}
-        error={keyError}
-        left={<TextInput.Icon icon="key-variant" />}
-        right={
-          <TextInput.Icon
-            icon={showApiKey ? 'eye-off' : 'eye'}
-            onPress={() => setShowApiKey(!showApiKey)}
-          />
-        }
-        outlineStyle={{ borderRadius: Radius.md }}
+        errorMsg={keyErrorMsg}
+        hint="Necesaria para consultar disponibilidad y carátulas de streaming."
+        linkLabel="¿Cómo consigo mi clave gratuita de TMDB?"
       />
-      {keyError ? (
-        <HelperText type="error" visible={keyError}>
-          {keyErrorMsg}
-        </HelperText>
-      ) : (
-        <HelperText type="info" visible>
-          Necesaria para consultar disponibilidad y carátulas de streaming.
-        </HelperText>
-      )}
-
-      <View style={{ alignItems: 'flex-start', marginTop: -Spacing.xs }}>
-        <Button
-          mode="text"
-          icon="open-in-new"
-          compact
-          onPress={handleOpenTmdb}
-          contentStyle={{ flexDirection: 'row-reverse' }}
-        >
-          ¿Cómo consigo mi clave gratuita de TMDB?
-        </Button>
-      </View>
 
       <Text variant="titleMedium" style={{ marginTop: Spacing.md }}>
         3. Tus plataformas de streaming

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ScrollView, View } from 'react-native';
+import { ScrollView } from 'react-native';
 import {
   Button,
   Dialog,
@@ -13,12 +13,12 @@ import {
   useTheme,
 } from 'react-native-paper';
 import { useRouter } from 'expo-router';
-import { openURL } from 'expo-linking';
 import { StorageService } from '../src/services/storage';
 import { TMDBService } from '../src/services/tmdb';
 import { DEFAULT_PLATFORMS, PlatformKey } from '../src/constants/platforms';
 import { Radius, Spacing } from '../src/constants/theme';
 import { PlatformList } from '../src/components/PlatformList';
+import { ApiKeyInput } from '../src/components/ApiKeyInput';
 import { useSnackbar } from '../src/components/SnackbarProvider';
 
 function maskApiKey(key: string): string {
@@ -47,9 +47,7 @@ export default function Settings() {
   // Diálogo de edición de API Key
   const [editKeyVisible, setEditKeyVisible] = useState(false);
   const [newKey, setNewKey] = useState('');
-  const [showNewKey, setShowNewKey] = useState(false);
-  const [keyError, setKeyError] = useState(false);
-  const [keyErrorMsg, setKeyErrorMsg] = useState('');
+  const [keyErrorMsg, setKeyErrorMsg] = useState<string | null>(null);
   const [isValidatingKey, setIsValidatingKey] = useState(false);
 
   // Diálogo de borrar todo
@@ -75,6 +73,9 @@ export default function Settings() {
     loadData();
   }, [showSnackbar]);
 
+  // Autoguardado: cada toggle persiste al instante. El invariante del
+  // onboarding (al menos una plataforma activa) se mantiene bloqueando
+  // el apagado de la última.
   const togglePlatform = (key: PlatformKey) => {
     // Antes de cargar, `platforms` son los defaults: guardarlos pisaría la
     // selección real del usuario.
@@ -91,14 +92,6 @@ export default function Settings() {
     });
   };
 
-  const handleOpenTmdb = async () => {
-    try {
-      await openURL('https://www.themoviedb.org/settings/api');
-    } catch (e) {
-      console.error('No se pudo abrir el enlace de TMDB:', e);
-    }
-  };
-
   const handleOpenEditUser = () => {
     setNewUsername(username);
     setUserError(false);
@@ -113,7 +106,7 @@ export default function Settings() {
       return;
     }
 
-    // Si no ha cambiado el usuario, cerramos sin vaciar la caché
+    // Si no ha cambiado el usuario, se cierra sin invalidar el escaneo en curso
     if (trimmed === username) {
       setEditUserVisible(false);
       return;
@@ -121,10 +114,10 @@ export default function Settings() {
 
     setIsSavingUser(true);
     try {
-      // Primero el usuario: si clearCache fallase, la caché vieja queda
-      // ligada al usuario anterior y el feed ya la ignora.
       await StorageService.setUsername(trimmed);
-      await StorageService.clearCache(); // Invalida la lista anterior de películas
+      // La caché no se borra: es del usuario anterior y el feed ya la ignora
+      // (volver a él la recupera). Basta con cortar el escaneo en curso.
+      StorageService.invalidateScans();
       setUsername(trimmed);
       setEditUserVisible(false);
       showSnackbar('Usuario actualizado. Vuelve al feed y pulsa Actualizar para cargar tu lista.');
@@ -138,16 +131,13 @@ export default function Settings() {
 
   const handleOpenEditKey = () => {
     setNewKey('');
-    setShowNewKey(false);
-    setKeyError(false);
-    setKeyErrorMsg('');
+    setKeyErrorMsg(null);
     setEditKeyVisible(true);
   };
 
   const handleSaveKey = async () => {
     const trimmed = newKey.trim();
     if (!trimmed) {
-      setKeyError(true);
       setKeyErrorMsg('Introduce una API Key');
       return;
     }
@@ -158,11 +148,10 @@ export default function Settings() {
     }
 
     setIsValidatingKey(true);
-    setKeyError(false);
+    setKeyErrorMsg(null);
     try {
       const keyProblem = await TMDBService.checkKey(trimmed);
       if (keyProblem) {
-        setKeyError(true);
         setKeyErrorMsg(keyProblem);
         return;
       }
@@ -171,11 +160,9 @@ export default function Settings() {
         await StorageService.setTmdbApiKey(trimmed);
       } catch (e) {
         console.error('Error guardando la clave de TMDB:', e);
-        setKeyError(true);
         setKeyErrorMsg('No se pudo guardar la clave. Inténtalo de nuevo.');
         return;
       }
-      TMDBService.setApiKey(trimmed);
       setApiKey(trimmed);
       setEditKeyVisible(false);
       showSnackbar('API Key de TMDB actualizada correctamente.');
@@ -192,9 +179,6 @@ export default function Settings() {
       showSnackbar('No se pudieron borrar los datos. Inténtalo de nuevo.');
       return;
     }
-    // Solo tras borrar el disco: si fallase, la clave en memoria seguiría
-    // casando con la guardada.
-    TMDBService.setApiKey(null);
     // dismissAll vacía el stack hasta la raíz antes de reemplazarla:
     // así el back de Android no puede volver a una pantalla con datos borrados.
     router.dismissAll();
@@ -264,8 +248,8 @@ export default function Settings() {
           <Dialog.Title style={{ textAlign: 'center' }}>¿Modificar usuario?</Dialog.Title>
           <Dialog.Content>
             <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: Spacing.md }}>
-              Si cambias de usuario se borrarán las películas guardadas de tu watchlist anterior para
-              cargar las de la nueva cuenta.
+              Si cambias de usuario, el feed se vaciará hasta que pulses Actualizar para cargar la
+              watchlist de la nueva cuenta.
             </Text>
             <TextInput
               mode="outlined"
@@ -304,41 +288,18 @@ export default function Settings() {
             <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: Spacing.md }}>
               Para seguir comprobando la disponibilidad de streaming necesitas una clave válida de The Movie Database.
             </Text>
-            <TextInput
-              mode="outlined"
+            <ApiKeyInput
               label="Nueva API Key (v3 auth)"
               placeholder="Pega aquí tu clave"
               value={newKey}
               onChangeText={(text) => {
-                setKeyError(false);
+                setKeyErrorMsg(null);
                 setNewKey(text);
               }}
-              secureTextEntry={!showNewKey}
-              autoCapitalize="none"
-              autoCorrect={false}
-              error={keyError}
-              outlineStyle={{ borderRadius: Radius.md }}
-              right={
-                <TextInput.Icon
-                  icon={showNewKey ? 'eye-off' : 'eye'}
-                  onPress={() => setShowNewKey(!showNewKey)}
-                />
-              }
+              errorMsg={keyErrorMsg}
+              hint="Se verificará la validez de la clave con TMDB."
+              linkLabel="Obtener clave en themoviedb.org"
             />
-            {keyError ? (
-              <HelperText type="error" visible={keyError}>
-                {keyErrorMsg}
-              </HelperText>
-            ) : (
-              <HelperText type="info" visible>
-                Se verificará la validez de la clave con TMDB.
-              </HelperText>
-            )}
-            <View style={{ alignItems: 'flex-start', marginTop: 4 }}>
-              <Button mode="text" icon="open-in-new" compact onPress={handleOpenTmdb}>
-                Obtener clave en themoviedb.org
-              </Button>
-            </View>
           </Dialog.Content>
           <Dialog.Actions>
             <Button disabled={isValidatingKey} onPress={() => setEditKeyVisible(false)}>

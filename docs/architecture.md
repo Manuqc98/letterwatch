@@ -34,8 +34,8 @@
 letterwatch/
 ├── app/                        # Capa de Navegación y Pantallas (Expo Router)
 │   ├── _layout.tsx             # Stack raíz: Temas (Paper + Nav), Snackbar global y rutas
-│   ├── onboarding.tsx          # Pantalla de bienvenida, setup de usuario y plataformas
-│   ├── settings.tsx            # Pantalla modal de ajustes (cuenta, autoguardado, reset)
+│   ├── onboarding.tsx          # Pantalla de bienvenida: usuario, API Key de TMDB y plataformas
+│   ├── settings.tsx            # Pantalla modal de ajustes (usuario, API Key, autoguardado, reset)
 │   └── (tabs)/                 # Grupo de pestañas principales (custodiadas por Auth Guard)
 │       ├── _layout.tsx         # Layout de Tabs Material 3 + Guard de Onboarding + Header
 │       ├── index.tsx           # Tab 1: "Ready to watch" (disponibles en plataformas)
@@ -43,6 +43,7 @@ letterwatch/
 │       └── watchout.tsx        # Tab 3: "WatchOut" (salidas en los próximos 30 días)
 ├── src/
 │   ├── components/             # Componentes visuales reutilizables
+│   │   ├── ApiKeyInput.tsx     # Campo de API Key de TMDB (onboarding y Ajustes) con enlace a TMDB
 │   │   ├── EmptyState.tsx      # Estado vacío para listas sin resultados o errores suaves
 │   │   ├── MovieGrid.tsx       # Cuadrícula responsive de 3 columnas para pósters
 │   │   ├── MoviePosterCard.tsx # Tarjeta accesible de película con nota, logos y enlace
@@ -60,8 +61,8 @@ letterwatch/
 │   └── services/               # Integraciones externas y almacenamiento
 │       ├── justwatch.ts        # Cliente GraphQL no oficial de JustWatch (News & Leaving)
 │       ├── letterboxd.ts       # Scraper HTML de Letterboxd con Axios + Cheerio
-│       ├── storage.ts          # Abstracción sobre AsyncStorage con control de epoch
-│       └── tmdb.ts             # Cliente REST TMDB con retry automático ante HTTP 429
+│       ├── storage.ts          # Abstracción sobre AsyncStorage: epoch y dueña única de la API Key
+│       └── tmdb.ts             # Cliente REST TMDB: retry ante 429, timeout, TmdbError y checkKey
 ├── scripts/
 │   └── reset-project.js        # Script utilitario inicial de Expo
 ├── AGENTS.md                   # Reglas e instrucciones para agentes de IA
@@ -82,7 +83,7 @@ letterwatch/
 
 2. **Control de Acceso y Tabs ([app/(tabs)/_layout.tsx](file:///home/manuqc98/reposPersonales/letterwatch/app/(tabs)/_layout.tsx)):**
    - Instancia el `WatchlistProvider`, que comparte la lógica entre las tres pestañas.
-   - Actúa como guardia de navegación: si no hay usuario o plataformas configuradas, redirige inmediatamente a `/onboarding`.
+   - Actúa como guardia de navegación: si falta el usuario, las plataformas o la API Key de TMDB, redirige inmediatamente a `/onboarding`.
    - Renderiza la barra inferior de navegación `BottomNavigation.Bar` de React Native Paper conectada al router.
 
 3. **Capa de Estado Centralizada ([src/context/WatchlistContext.tsx](file:///home/manuqc98/reposPersonales/letterwatch/src/context/WatchlistContext.tsx)):**
