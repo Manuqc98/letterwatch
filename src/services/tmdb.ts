@@ -1,8 +1,16 @@
 import axios from 'axios';
 
-const TMDB_API_KEY = process.env.EXPO_PUBLIC_TMDB_API_KEY;
+// Clave activa: la fijan WatchlistContext (al enfocar), el onboarding y
+// Ajustes a partir de StorageService.getTmdbApiKey, que es quien decide el
+// fallback al .env (solo en desarrollo).
+let activeApiKey: string | null = null;
+
 const BASE_URL = 'https://api.themoviedb.org/3';
 const POSTER_BASE_URL = 'https://image.tmdb.org/t/p/w500';
+
+function getEffectiveApiKey(): string | null {
+  return activeApiKey && activeApiKey.length > 0 ? activeApiKey : null;
+}
 
 interface TmdbProvider {
   provider_id: number;
@@ -38,16 +46,40 @@ async function getWithRetry(url: string, params: Record<string, unknown>) {
 // mismo que "película no encontrada" o "sin plataformas", y no debe cachearse
 // como tal.
 export const TMDBService = {
+  setApiKey(key: string | null) {
+    activeApiKey = key ? key.trim() : null;
+  },
+  getApiKey(): string | null {
+    return getEffectiveApiKey();
+  },
   isConfigured(): boolean {
-    return !!TMDB_API_KEY;
+    return !!getEffectiveApiKey();
+  },
+  async validateKey(apiKey: string): Promise<boolean> {
+    const trimmed = apiKey.trim();
+    if (!trimmed) return false;
+    try {
+      const response = await axios.get(`${BASE_URL}/authentication`, {
+        params: { api_key: trimmed },
+        timeout: 6000,
+      });
+      return response.data?.success === true;
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
+        return false;
+      }
+      throw error;
+    }
   },
 
   // Resuelve título (+año) → id de TMDB. Solo hace falta para películas
   // nuevas: el id se cachea para siempre.
   // null = TMDB respondió bien pero no hay resultados.
   async searchMovie(title: string, year?: string): Promise<number | null> {
+    const key = getEffectiveApiKey();
+    if (!key) throw new Error('TMDB_NOT_CONFIGURED');
     const response = await getWithRetry(`${BASE_URL}/search/movie`, {
-      api_key: TMDB_API_KEY,
+      api_key: key,
       query: title,
       language: 'es-ES',
       ...(year ? { year } : {}),
@@ -60,8 +92,10 @@ export const TMDBService = {
   // nota del público y póster (append_to_response combina detalles+providers).
   // El filtrado por las plataformas del usuario se hace al pintar la lista.
   async getMovieStatus(tmdbId: number): Promise<MovieStatus> {
+    const key = getEffectiveApiKey();
+    if (!key) throw new Error('TMDB_NOT_CONFIGURED');
     const response = await getWithRetry(`${BASE_URL}/movie/${tmdbId}`, {
-      api_key: TMDB_API_KEY,
+      api_key: key,
       language: 'es-ES',
       append_to_response: 'watch/providers',
     });

@@ -33,15 +33,18 @@ Este documento reúne las restricciones de diseño, comportamientos no evidentes
 * **Solución:** Se implementó [fmtDay](file:///home/manuqc98/reposPersonales/letterwatch/src/context/WatchlistContext.tsx#L36-L39) que realiza manipulación directa de cadenas (`iso.slice(0, 10).split('-')`) evitando cualquier conversión por el motor de fecha de JavaScript.
 
 ### C. Condición de Carrera en Borrado de Datos (`cacheEpoch`)
-* **Gotcha:** Un escaneo de watchlist puede tardar varios segundos. Si el usuario pulsa *"Borrar datos y cambiar usuario"* en Ajustes mientras un escaneo está en curso, la promesa de red podría resolver segundos más tarde y sobreescribir el almacenamiento con los datos del usuario recién borrado.
-* **Solución:** [StorageService](file:///home/manuqc98/reposPersonales/letterwatch/src/services/storage.ts#L56-L61) implementa un contador en memoria `cacheEpoch`. Al iniciar el escaneo se guarda el epoch; si al terminar el escaneo el epoch ha variado (porque se llamó a `clearAll()`), los datos se descartan silenciosamente y no se guardan en `AsyncStorage`.
+* **Gotcha:** Un escaneo de watchlist puede tardar varios segundos. Si el usuario pulsa *"Borrar todos los datos y reiniciar"* o cambia de usuario en Ajustes mientras un escaneo está en curso, la promesa de red podría resolver segundos más tarde y sobreescribir el almacenamiento con los datos del usuario anterior.
+* **Solución:** [StorageService](file:///home/manuqc98/reposPersonales/letterwatch/src/services/storage.ts) implementa un contador en memoria `cacheEpoch` que incrementan `clearAll()` y `clearCache()`. Al iniciar el escaneo se guarda el epoch; si varía (se comprueba tras cada lote y al final), los datos se descartan sin guardarse en `AsyncStorage`.
+* **Gotcha adicional:** Al volver de Ajustes con un escaneo en marcha, el focus de `(tabs)` no recarga la caché (el escaneo "es dueño" del estado). Por eso el escaneo invalidado no se limita a no persistir: resincroniza la vista con lo que haya en disco (`resyncFromStorage`), o seguiría mostrando la watchlist del usuario anterior.
 
 ### D. Rate Limiting de TMDB (HTTP 429)
 * TMDB permite aproximadamente 40-50 peticiones por segundo. Con lotes de 20 películas simultáneas se mantiene un margen seguro, pero pueden producirse picos.
 * **Solución:** [src/services/tmdb.ts](file:///home/manuqc98/reposPersonales/letterwatch/src/services/tmdb.ts#L23-L35) intercepta errores `429`, lee el encabezado `retry-after` y espera el tiempo correspondiente antes de reintentar la llamada. Si la llamada reintentada fallara, la película conserva sus datos previos en lugar de marcarse como "no disponible".
 
-### E. Exposición de Clave TMDB en Cliente
-* La variable `EXPO_PUBLIC_TMDB_API_KEY` se inyecta en tiempo de compilación en el bundle de JavaScript público. Se debe asumir que cualquier usuario técnico puede extraer esta clave del paquete APK/AAB. Es una clave pública de solo lectura para TMDB, pero no deben almacenarse claves privadas o de pago con este mecanismo.
+### E. Clave TMDB Parametrizable por Usuario
+* Anteriormente la clave iba fija en `EXPO_PUBLIC_TMDB_API_KEY`. Para permitir la distribución directa de APKs a otros usuarios, la aplicación permite a cada usuario introducir y validar su propia clave gratuita desde el Onboarding y desde Ajustes (`@letterwatch_tmdb_api_key`).
+* Si el dispositivo no tiene clave en `AsyncStorage`, `StorageService.getTmdbApiKey()` usa `EXPO_PUBLIC_TMDB_API_KEY` como fallback **solo en builds de desarrollo (`__DEV__`)**. En un APK distribuido la clave del desarrollador nunca se precarga en el onboarding ni sobrevive a "Borrar todo". Aun así, cualquier `EXPO_PUBLIC_*` definida al compilar se empaqueta en el bundle: no la registres como variable de entorno de EAS.
+* `TMDBService` no lee el `.env`: solo usa la clave activa que le fijan `WatchlistContext`, el onboarding y Ajustes.
 
 ---
 

@@ -6,6 +6,7 @@ import { JustWatchEntry } from './justwatch';
 const USERNAME_KEY = '@letterwatch_username';
 const PLATFORMS_KEY = '@letterwatch_platforms';
 const CACHE_KEY = '@letterwatch_cache';
+const TMDB_API_KEY_STORAGE = '@letterwatch_tmdb_api_key';
 
 // A partir de esta edad los datos se consideran desactualizados y la UI
 // sugiere refrescar. No se borran: sirven para el refresh incremental
@@ -113,8 +114,41 @@ export const StorageService = {
     };
     return AsyncStorage.setItem(CACHE_KEY, JSON.stringify(data));
   },
+  async clearCache(): Promise<void> {
+    cacheEpoch++;
+    return AsyncStorage.removeItem(CACHE_KEY);
+  },
+  async getTmdbApiKey(): Promise<string | null> {
+    const stored = await AsyncStorage.getItem(TMDB_API_KEY_STORAGE);
+    if (stored && stored.trim().length > 0) return stored.trim();
+    // Fallback a la clave del .env SOLO en desarrollo: en un build
+    // distribuido la clave del desarrollador no debe precargarse en el
+    // onboarding ni sobrevivir a "Borrar todo".
+    if (!__DEV__) return null;
+    const envKey = process.env.EXPO_PUBLIC_TMDB_API_KEY;
+    return envKey && envKey.trim().length > 0 ? envKey.trim() : null;
+  },
+  async setTmdbApiKey(apiKey: string): Promise<void> {
+    return AsyncStorage.setItem(TMDB_API_KEY_STORAGE, apiKey.trim());
+  },
+  // Guarda la configuración del onboarding en una sola escritura: un fallo
+  // a medias no deja un usuario sin clave (o al revés) en disco.
+  async saveSetup(
+    username: string,
+    apiKey: string,
+    platforms: Record<PlatformKey, boolean>
+  ): Promise<void> {
+    return AsyncStorage.multiSet([
+      [USERNAME_KEY, username],
+      [TMDB_API_KEY_STORAGE, apiKey.trim()],
+      [PLATFORMS_KEY, JSON.stringify(platforms)],
+    ]);
+  },
+  async clearTmdbApiKey(): Promise<void> {
+    return AsyncStorage.removeItem(TMDB_API_KEY_STORAGE);
+  },
   async clearAll(): Promise<void> {
     cacheEpoch++;
-    return AsyncStorage.multiRemove([USERNAME_KEY, PLATFORMS_KEY, CACHE_KEY]);
+    return AsyncStorage.multiRemove([USERNAME_KEY, PLATFORMS_KEY, CACHE_KEY, TMDB_API_KEY_STORAGE]);
   },
 };

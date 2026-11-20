@@ -41,10 +41,11 @@ Netflix, Amazon Prime Video, Disney+, HBO Max, SkyShowtime, Movistar Plus+, Appl
    ```bash
    npm install
    ```
-2. Consigue una API key gratuita de TMDB (https://www.themoviedb.org/settings/api) y crea un fichero `.env` en la raíz:
+2. (Opcional) Consigue una API key gratuita de TMDB (https://www.themoviedb.org/settings/api) y crea un fichero `.env` en la raíz para no tener que pegarla en el onboarding mientras desarrollas:
    ```
    EXPO_PUBLIC_TMDB_API_KEY=tu_api_key_aqui
    ```
+   Este fallback solo se usa en builds de desarrollo (`__DEV__`); en un APK cada usuario introduce su propia clave en el onboarding.
 3. Arranca el proyecto y ábrelo con Expo Go (o un emulador):
    ```bash
    npx expo start
@@ -60,22 +61,18 @@ Con **EAS Build** (gratis) se compila en la nube un APK que se instala como una 
    ```bash
    npx eas-cli login
    ```
-2. Registra la API key de TMDB como variable de entorno de EAS (el `.env` está en `.gitignore` y **no** se sube al build). Solo hace falta una vez:
-   ```bash
-   npx eas-cli env:create --scope project --name EXPO_PUBLIC_TMDB_API_KEY --environment preview --environment production
-   ```
-   (pega el valor de tu `.env` cuando lo pida)
-3. Lanza el build (la primera vez pregunta si crear el proyecto y genera el keystore: acepta los valores por defecto):
+2. Lanza el build (la primera vez pregunta si crear el proyecto y genera el keystore: acepta los valores por defecto):
    ```bash
    npx eas-cli build --platform android --profile preview
    ```
-4. Cuando termine (~10-20 min en la cola gratuita), abre el enlace del build desde el móvil, descarga el APK e instálalo (Android pedirá permitir "instalar apps desconocidas").
+   No registres `EXPO_PUBLIC_TMDB_API_KEY` como variable de entorno de EAS: la clave quedaría empaquetada en el APK que repartes. Cada usuario introduce la suya en el onboarding (y puede cambiarla en Ajustes).
+3. Cuando termine (~10-20 min en la cola gratuita), abre el enlace del build desde el móvil, descarga el APK e instálalo (Android pedirá permitir "instalar apps desconocidas").
 
-Cada cambio futuro en el código requiere repetir el paso 3 e instalar el APK nuevo.
+Cada cambio futuro en el código requiere repetir el paso 2 e instalar el APK nuevo.
 
 ## ⚠️ Limitaciones conocidas
 
 - El scraping depende del HTML de Letterboxd: si cambian su markup, hay que actualizar los selectores en `src/services/letterboxd.ts`.
 - Se analizan como máximo 10 páginas de la watchlist (280 películas). Si tu lista es mayor, la app te avisa de que está truncada.
 - La región de streaming está fijada a España (`ES`) en `src/services/tmdb.ts`.
-- La API key de TMDB va empaquetada en el cliente (prefijo `EXPO_PUBLIC_`): no subas tu `.env` a ningún repositorio (ya está en `.gitignore`).
+- Cada usuario usa su propia API key de TMDB, guardada en local en el dispositivo. La del `.env` (prefijo `EXPO_PUBLIC_`) se empaqueta en el bundle si está definida al compilar: úsala solo en desarrollo y no subas tu `.env` a ningún repositorio (ya está en `.gitignore`).

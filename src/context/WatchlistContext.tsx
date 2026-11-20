@@ -9,8 +9,9 @@ import {
 } from 'react';
 import { Button, Dialog, Portal, Text } from 'react-native-paper';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { StorageService, CachedMovie, STALE_AFTER_DAYS } from '../services/storage';
+import { StorageService, CachedData, CachedMovie, STALE_AFTER_DAYS } from '../services/storage';
 import { LetterboxdService, LetterboxdError } from '../services/letterboxd';
+import axios from 'axios';
 import { TMDBService } from '../services/tmdb';
 import { JustWatchService, JustWatchEntry } from '../services/justwatch';
 import { PlatformKey, DEFAULT_PLATFORMS, matchPlatforms } from '../constants/platforms';
@@ -107,6 +108,24 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
   // Ref (no estado): el callback del focus lo lee sin sufrir stale closures.
   const isRefreshingRef = useRef(false);
 
+  // Vuelca la caché en el estado. Una caché de otro usuario (cambio de
+  // cuenta) no vale: se deja la vista vacía.
+  const applyCache = useCallback((cache: CachedData | null, username: string | null) => {
+    if (cache && cache.username === username) {
+      setAllMovies(cache.movies);
+      setLastUpdated(cache.timestamp);
+      setTruncated(cache.truncated);
+      setJwNews(cache.news ?? null);
+      setJwLeaving(cache.leaving ?? null);
+    } else {
+      setAllMovies([]);
+      setLastUpdated(null);
+      setTruncated(false);
+      setJwNews(null);
+      setJwLeaving(null);
+    }
+  }, []);
+
   // Este provider vive en el layout de (tabs): el focus se liga al route
   // "(tabs)" del Stack raíz, así que cambiar de tab NO recarga, pero volver
   // de Ajustes o del onboarding SÍ (misma semántica que la v1).
@@ -117,34 +136,23 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
         try {
           const username = await StorageService.getUsername();
           const platforms = await StorageService.getPlatforms();
+          const apiKey = await StorageService.getTmdbApiKey();
           const cache = await StorageService.getCache();
           if (!active) return;
 
-          if (!username || !platforms) {
+          if (!username || !platforms || !apiKey) {
             setConfigured(false);
             return;
           }
           setConfigured(true);
           setUserPlatforms(platforms);
+          TMDBService.setApiKey(apiKey);
 
           // Con un escaneo en marcha no se pisa la lista con la caché vieja:
           // el propio escaneo actualizará el estado al terminar.
           if (isRefreshingRef.current) return;
 
-          // Una caché de otro usuario (cambio de cuenta) no vale.
-          if (cache && cache.username === username) {
-            setAllMovies(cache.movies);
-            setLastUpdated(cache.timestamp);
-            setTruncated(cache.truncated);
-            setJwNews(cache.news ?? null);
-            setJwLeaving(cache.leaving ?? null);
-          } else {
-            setAllMovies([]);
-            setLastUpdated(null);
-            setTruncated(false);
-            setJwNews(null);
-            setJwLeaving(null);
-          }
+          applyCache(cache, username);
         } catch (e) {
           console.error('Error cargando datos guardados:', e);
           // Un fallo transitorio de lectura no expulsa al onboarding a un
@@ -155,8 +163,16 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
       return () => {
         active = false;
       };
-    }, [])
+    }, [applyCache])
   );
+
+  // Un escaneo invalidado (logout, "Borrar todo" o cambio de usuario en
+  // Ajustes) no persiste nada, y además deja la vista como esté en disco:
+  // el focus no la recargó porque el escaneo seguía en marcha.
+  const resyncFromStorage = async () => {
+    const [username, cache] = await Promise.all([StorageService.getUsername(), StorageService.getCache()]);
+    applyCache(cache, username);
+  };
 
   const refresh = async () => {
     if (isRefreshingRef.current) return;
@@ -164,7 +180,11 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
       setDialog({
         icon: 'key-alert-outline',
         title: 'Falta la API key',
-        message: 'Configura EXPO_PUBLIC_TMDB_API_KEY en el fichero .env (ver README) y reinicia la app.',
+        message: 'Configura tu API Key de TMDB en los Ajustes para poder escanear la disponibilidad.',
+        actions: [
+          { label: 'Cerrar' },
+          { label: 'Ir a Ajustes', onPress: () => router.navigate('/settings') },
+        ],
       });
       return;
     }
@@ -240,7 +260,10 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
                 voteAverage: status.voteAverage,
                 genreIds: status.genreIds,
               };
-            } catch {
+            } catch (err) {
+              if (axios.isAxiosError(err) && err.response?.status === 401) {
+                throw err;
+              }
               // Fallo de red/API: mejor conservar el dato anterior que
               // cachear un falso "no disponible".
               failedCount++;
@@ -248,6 +271,12 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
             }
           })
         );
+        // Invalidado a mitad: no se sigue pintando (ni consultando) la
+        // watchlist de un usuario que ya no es el actual.
+        if (StorageService.getCacheEpoch() !== epochAtStart) {
+          await resyncFromStorage();
+          return;
+        }
         for (const movie of processed) {
           if (movie) interim.set(movie.id, movie);
         }
@@ -268,7 +297,10 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
       // Si durante el escaneo hubo un logout, "Borrar datos" o cambio de
       // usuario, estos resultados ya no son suyos: no se persisten.
       const currentUsername = await StorageService.getUsername();
-      if (currentUsername !== username || StorageService.getCacheEpoch() !== epochAtStart) return;
+      if (currentUsername !== username || StorageService.getCacheEpoch() !== epochAtStart) {
+        await resyncFromStorage();
+        return;
+      }
 
       setAllMovies(results);
       setTruncated(wasTruncated);
@@ -302,6 +334,16 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
           icon: 'wifi-off',
           title: 'Sin conexión con Letterboxd',
           message: `${error.message} Comprueba tu conexión e inténtalo de nuevo.`,
+        });
+      } else if (axios.isAxiosError(error) && error.response?.status === 401) {
+        setDialog({
+          icon: 'key-remove',
+          title: 'API Key no válida',
+          message: 'TMDB ha rechazado tu clave de API (401 Unauthorized). Ve a Ajustes y compruébala.',
+          actions: [
+            { label: 'Cerrar' },
+            { label: 'Ir a Ajustes', onPress: () => router.navigate('/settings') },
+          ],
         });
       } else {
         console.error(error);

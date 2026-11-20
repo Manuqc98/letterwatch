@@ -69,3 +69,14 @@ Este documento registra las decisiones técnicas clave tomadas durante el desarr
   * Emplear `react-native-paper` con especificación Material Design 3.
   * Usar `@material/material-color-utilities` para generar automáticamente la paleta tonal light/dark completa partiendo del color corporativo naranja de Letterboxd (`#FF8000`).
 * **Justificación:** Coherencia cromática con la marca de Letterboxd, adaptación automática al tema del sistema operativo y cumplimiento estricto de contrastes de accesibilidad WCAG.
+
+---
+
+### ADR-008: Configuración Dinámica de Usuario y API Key con Confirmación Previa
+* **Estado:** Aceptado
+* **Contexto:** Para distribuir la app como APK independiente a terceros sin requerir una cuenta centralizada ni compartir una API Key de desarrollo de TMDB, cada usuario debe poder introducir su propia clave de TMDB y su usuario de Letterboxd, pudiendo modificarlos en cualquier momento desde Ajustes.
+* **Decisión:**
+  * Solicitar y validar la clave de TMDB en tiempo real contra `/authentication` en el Onboarding y en Ajustes.
+  * Almacenar la clave de forma privada y local en `@letterwatch_tmdb_api_key`.
+  * Exigir confirmación mediante un pop-up modal antes de permitir editar el usuario de Letterboxd (advirtiendo del reset de la caché) o la clave de TMDB.
+* **Justificación:** Garantiza autonomía completa para cualquier usuario que instale el APK, previene modificaciones accidentales de credenciales y asegura que no se mezclen datos cacheados entre usuarios distintos.

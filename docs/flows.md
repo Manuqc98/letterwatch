@@ -10,18 +10,18 @@ Cuando el usuario inicia la aplicación:
 1. [app/_layout.tsx](file:///home/manuqc98/reposPersonales/letterwatch/app/_layout.tsx) inicializa el tema M3, el `ThemeProvider` de React Navigation y el `SnackbarProvider`.
 2. Se monta la ruta raíz `(tabs)`, ejecutando [app/(tabs)/_layout.tsx](file:///home/manuqc98/reposPersonales/letterwatch/app/(tabs)/_layout.tsx).
 3. `GuardedTabs` evalúa el valor `configured` provisto por [WatchlistContext.tsx](file:///home/manuqc98/reposPersonales/letterwatch/src/context/WatchlistContext.tsx):
-   * `configured === null`: Se muestra un `ActivityIndicator` a pantalla completa mientras se leen las claves `@letterwatch_username` y `@letterwatch_platforms` desde [StorageService](file:///home/manuqc98/reposPersonales/letterwatch/src/services/storage.ts).
-   * `configured === false`: No hay usuario o plataformas guardadas. Se dispara `<Redirect href="/onboarding" />`.
-   * `configured === true`: El usuario está configurado. Se renderiza el `Tabs` con las tres vistas principales (`news`, `watchout`, `index`).
+   * `configured === null`: Se muestra un `ActivityIndicator` a pantalla completa mientras se leen las claves `@letterwatch_username`, `@letterwatch_platforms` y `@letterwatch_tmdb_api_key` desde [StorageService](file:///home/manuqc98/reposPersonales/letterwatch/src/services/storage.ts).
+   * `configured === false`: No hay usuario, plataformas o clave de TMDB guardadas. Se dispara `<Redirect href="/onboarding" />`.
+   * `configured === true`: El usuario y servicios están configurados. Se inicializa `TMDBService.setApiKey(...)` y se renderiza el `Tabs` con las tres vistas principales (`news`, `watchout`, `index`).
 
 ```mermaid
 flowchart TD
-    Start([Inicio de App]) --> LoadStorage[StorageService: Leer Usuario y Plataformas]
+    Start([Inicio de App]) --> LoadStorage[StorageService: Leer Usuario, Plataformas y TMDB Key]
     LoadStorage --> CheckConfig{¿Configurado?}
-    CheckConfig -- No (null o sin datos) --> OnboardingRoute[Redirigir a /onboarding]
+    CheckConfig -- No (falta algún dato) --> OnboardingRoute[Redirigir a /onboarding]
     CheckConfig -- Sí --> LoadCache[Cargar Caché AsyncStorage]
     LoadCache --> RenderTabs[Renderizar Tabs: Ready, News, WatchOut]
-    OnboardingRoute --> SaveOnboarding[Guardar Usuario y Plataformas]
+    OnboardingRoute --> SaveOnboarding[Guardar Usuario, TMDB Key y Plataformas]
     SaveOnboarding --> ReplaceRoot[router.replace('/')]
     ReplaceRoot --> RenderTabs
 ```
@@ -35,7 +35,8 @@ El escaneo de disponibilidad se dispara cuando el usuario presiona el botón flo
 ### Fases del Escaneo:
 
 1. **Comprobación de API Key:**
-   * Verifica `TMDBService.isConfigured()`. Si falta la clave de entorno `EXPO_PUBLIC_TMDB_API_KEY`, muestra un diálogo modal y aborta.
+   * Verifica `TMDBService.isConfigured()` (clave activa fijada desde `StorageService.getTmdbApiKey()`, que solo cae al `.env` en builds `__DEV__`). Si no hay clave, muestra un diálogo con acceso a Ajustes y aborta.
+   * Si TMDB responde `401` durante el escaneo, se aborta entero (no se persiste nada) y se muestra el diálogo "API Key no válida" con acceso a Ajustes.
 2. **Lanzamiento Asíncrono de JustWatch:**
    * Las peticiones a JustWatch (`getNewOnPlatforms` y `getLeavingSoon`) se disparan de inmediato en paralelo al escaneo de Letterboxd, evitando tiempos de espera en serie. Se capturan errores individualmente para permitir degradación suave.
 3. **Scraping de Letterboxd ([LetterboxdService](file:///home/manuqc98/reposPersonales/letterwatch/src/services/letterboxd.ts)):**
@@ -53,7 +54,7 @@ El escaneo de disponibilidad se dispara cuando el usuario presiona el botón flo
    * Tras procesar cada lote, se actualiza el estado `setAllMovies` y `progress`, alimentando la barra de progreso en vivo.
 6. **Resolución de JustWatch y Protección de Epoch:**
    * Se espera el resultado de las promesas de JustWatch.
-   * Se compara el usuario actual y el `cacheEpoch` de [StorageService](file:///home/manuqc98/reposPersonales/letterwatch/src/services/storage.ts). Si el usuario cerró sesión durante el escaneo, los resultados se descartan y no se guardan en disco.
+   * Se compara el usuario actual y el `cacheEpoch` de [StorageService](file:///home/manuqc98/reposPersonales/letterwatch/src/services/storage.ts). Si el usuario cerró sesión o cambió de cuenta en Ajustes durante el escaneo, los resultados se descartan, no se guardan en disco y la vista se resincroniza con lo que haya en disco (`resyncFromStorage`). El `cacheEpoch` también se comprueba tras cada lote, para cortar antes el escaneo invalidado.
    * Si todo es correcto, se actualiza el estado y se persiste en AsyncStorage mediante `StorageService.setCache()`.
 
 ```mermaid
@@ -125,12 +126,20 @@ Implementado en [src/components/MoviePosterCard.tsx](file:///home/manuqc98/repos
 
 ---
 
-## 5. Flujo de Ajustes y Autoguardado
+## 5. Flujo de Ajustes y Gestión de Credenciales
 
 Implementado en [app/settings.tsx](file:///home/manuqc98/reposPersonales/letterwatch/app/settings.tsx):
+* **Modificación de Usuario de Letterboxd con Advertencia:**
+  1. El usuario pulsa sobre la fila de su cuenta.
+  2. Se abre un diálogo modal que incluye la advertencia de que cambiar de usuario invalidará la caché previa y el campo para introducir el nuevo usuario.
+  3. Si el usuario no ha cambiado, se cierra sin tocar la caché. Si cambia, actualiza `@letterwatch_username`, ejecuta `StorageService.clearCache()` y notifica con un `Snackbar`.
+* **Modificación de API Key de TMDB con Validación:**
+  1. El usuario pulsa sobre la clave de TMDB (mostrada enmascarada).
+  2. Se abre el diálogo modal con aviso informativo, campo para pegar la nueva clave (con ver/ocultar) y enlace directo a `themoviedb.org`.
+  3. Al pulsar *"Validar y Guardar"*, se verifica la clave en vivo con `TMDBService.validateKey(...)` contra el endpoint `/authentication`. Si es válida, se persiste en `@letterwatch_tmdb_api_key` y se actualiza `TMDBService.setApiKey(...)`. Si hay un fallo de red o timeout, avisa de comprobar la conexión sin tachar la clave de inválida.
 * **Autoguardado de Plataformas:** Cada conmutación de switch guarda inmediatamente la nueva configuración en `AsyncStorage` mediante `StorageService.setPlatforms`. No existe botón "Guardar".
 * **Invariante Mínimo:** Se valida que el usuario no pueda desactivar la última plataforma activa (muestra un aviso en `SnackbarProvider`).
-* **Borrado de Datos y Reset:**
-  * Al confirmar el diálogo "Borrar todo", ejecuta `StorageService.clearAll()`.
+* **Borrado de Datos y Reset Completo:**
+  * Al confirmar el diálogo "Borrar todo", ejecuta `StorageService.clearAll()` (limpia usuario, plataformas, caché y API key).
   * Incrementa internamente `cacheEpoch`, invalidando cualquier proceso de escaneo asíncrono que estuviese en curso.
   * Ejecuta `router.dismissAll()` y `router.replace('/onboarding')` para vaciar el historial de navegación e impedir volver atrás a vistas con datos eliminados.
