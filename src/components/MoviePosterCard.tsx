@@ -23,8 +23,8 @@ async function openInLetterboxd(slug: string) {
 interface Props {
   movie: VisibleMovie;
   width: number;
-  // News: "desde 12/09" (primary) · WatchOut: "hasta 20/09" (error)
-  subtitle?: { text: string; tone: 'primary' | 'error' };
+  // News: "desde 12/09" (primary) · WatchOut: "hasta 20/09" (error) · Ready: duración/año (muted)
+  subtitle?: { text: string; tone: 'primary' | 'error' | 'muted' };
   badge?: string; // WatchOut: "Única plataforma"
 }
 
@@ -98,7 +98,14 @@ export function MoviePosterCard({ movie, width, subtitle, badge }: Props) {
           variant="labelSmall"
           numberOfLines={1}
           maxFontSizeMultiplier={1.5}
-          style={{ color: subtitle.tone === 'error' ? theme.colors.error : theme.colors.primary }}
+          style={{
+            color:
+              subtitle.tone === 'error'
+                ? theme.colors.error
+                : subtitle.tone === 'muted'
+                  ? theme.colors.onSurfaceVariant
+                  : theme.colors.primary,
+          }}
         >
           {subtitle.text}
         </Text>

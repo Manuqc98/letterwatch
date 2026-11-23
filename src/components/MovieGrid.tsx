@@ -11,7 +11,7 @@ interface Props<T extends VisibleMovie> {
   movies: T[];
   listHeader?: ReactElement | null;
   listEmpty?: ReactElement | null;
-  getSubtitle?: (movie: T) => { text: string; tone: 'primary' | 'error' } | undefined;
+  getSubtitle?: (movie: T) => { text: string; tone: 'primary' | 'error' | 'muted' } | undefined;
   getBadge?: (movie: T) => string | undefined;
 }
 
@@ -36,6 +36,8 @@ export function MovieGrid<T extends VisibleMovie>({
       columnWrapperStyle={{ gap: GRID_GAP }}
       // paddingBottom deja hueco al FAB; la tab bar ya absorbe el inset.
       contentContainerStyle={{ padding: Spacing.md, paddingBottom: 88, gap: GRID_GAP + 4 }}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
       renderItem={({ item }) => (
         <MoviePosterCard
           movie={item}

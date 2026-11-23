@@ -67,6 +67,8 @@ export interface MovieStatus {
   voteAverage: number | null; // nota del público TMDB (null si no hay votos)
   posterUrl: string | null;
   genreIds: number[]; // géneros TMDB (ver constants/genres.ts)
+  runtime: number | null; // duración en minutos (null si TMDB devuelve 0 o falta)
+  originalLanguage: string | null; // código ISO 639-1 (p. ej. "en", "es", "ja")
 }
 
 // Reintento único ante rate-limit (429), respetando Retry-After si viene.
@@ -134,12 +136,19 @@ export const TMDBService = {
     const data = response.data;
     const flatrate: TmdbProvider[] = data['watch/providers']?.results?.ES?.flatrate ?? [];
     const hasVotes = typeof data.vote_average === 'number' && data.vote_count > 0;
+    const runtime = typeof data.runtime === 'number' && data.runtime > 0 ? data.runtime : null;
+    const originalLanguage =
+      typeof data.original_language === 'string' && data.original_language.trim().length > 0
+        ? data.original_language.trim().toLowerCase()
+        : null;
 
     return {
       flatrateProviderIds: flatrate.map((provider) => provider.provider_id),
       voteAverage: hasVotes ? data.vote_average : null,
       posterUrl: data.poster_path ? `${POSTER_BASE_URL}${data.poster_path}` : null,
       genreIds: (data.genres ?? []).map((genre: { id: number }) => genre.id),
+      runtime,
+      originalLanguage,
     };
   },
 };

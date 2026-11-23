@@ -49,10 +49,10 @@ El escaneo de disponibilidad se dispara cuando el usuario presiona el botón flo
 5. **Cruce con TMDB por Lotes ([TMDBService](file:///home/manuqc98/reposPersonales/letterwatch/src/services/tmdb.ts)):**
    * Procesa la lista en lotes de 20 películas (`BATCH_SIZE = 20`).
    * **Búsqueda Incremental:** Si la película ya tiene `tmdbId` de escaneos anteriores, **se salta la búsqueda** por nombre. Si es nueva, consulta `/search/movie`.
-   * **Detalles en Petición Única:** Con el `tmdbId`, consulta `/movie/{id}?append_to_response=watch/providers` para obtener en una sola llamada los proveedores flatrate para `ES`, la nota del público (`vote_average`), el póster y los géneros.
+   * **Detalles en Petición Única:** Con el `tmdbId`, consulta `/movie/{id}?append_to_response=watch/providers` para obtener en una sola llamada los proveedores flatrate para `ES`, la nota del público (`vote_average`), el póster, los géneros, la duración (`runtime`) y el idioma original (`original_language`).
    * **Control de Rate Limit:** El servicio reintenta automáticamente una vez si TMDB responde con código HTTP 429 respetando el header `Retry-After`.
    * **Timeout:** Cada petición a TMDB tiene un timeout de 10 s (`TIMEOUT_MS`). Al vencer cuenta como fallo de esa película (conserva su dato anterior), así una conexión colgada no bloquea el escaneo.
-   * Tras procesar cada lote, se actualiza el estado `setAllMovies` y `progress`, alimentando la barra de progreso en vivo.
+   * Tras procesar cada lote, se actualiza el estado `setAllMovies` (preservando el orden original de la watchlist de Letterboxd) y `progress`, alimentando la barra de progreso en vivo.
 6. **Resolución de JustWatch y Protección de Epoch:**
    * Se espera el resultado de las promesas de JustWatch.
    * Se compara el usuario actual y el `cacheEpoch` de [StorageService](file:///home/manuqc98/reposPersonales/letterwatch/src/services/storage.ts). Si el usuario cerró sesión o cambió de cuenta en Ajustes durante el escaneo, los resultados se descartan, no se guardan en disco y la vista se resincroniza con lo que haya en disco (`resyncFromStorage`). El `cacheEpoch` también se comprueba tras cada lote, para cortar antes el escaneo invalidado, y antes de mostrar cualquier diálogo de error: los errores de un escaneo invalidado son del usuario anterior y no se muestran.
@@ -96,12 +96,13 @@ Para garantizar una experiencia fluida sin latencia de red, **el filtrado por pl
 ### A. Pantalla "Ready to watch" ([app/(tabs)/index.tsx](file:///home/manuqc98/reposPersonales/letterwatch/app/(tabs)/index.tsx))
 1. Recibe `allMovies` y las plataformas activas `userPlatforms`.
 2. Calcula `readyMovies` verificando si `movie.flatrateProviderIds` coincide con los IDs de TMDB de las plataformas que el usuario tiene habilitadas (`matchPlatforms`).
-3. Ordena las películas disponibles mediante `compareByRating`:
-   * Nota media descendente (redondeada a un decimal).
-   * En caso de empate, año de estreno más reciente.
-   * En caso de empate, orden alfabético por título.
-4. Extrae los géneros presentes en las películas disponibles y los muestra en chips horizontales ordenados por frecuencia.
-5. Aplica el filtro de selección de géneros mediante lógica de unión (OR): una película se muestra si contiene cualquiera de los géneros seleccionados por el usuario.
+3. Mediante [movieFilters.ts](../src/utils/movieFilters.ts) y [FeedControls.tsx](../src/components/FeedControls.tsx), el usuario puede combinar en memoria (sin persistencia de sesión):
+   * **Búsqueda por título o año** (insensible a tildes y mayúsculas, en un `Searchbar` fuera del `FlatList` para evitar pérdida de foco).
+   * **Ordenación configurable con dirección invertible (`↑ / ↓`)**: Nota (por defecto descendente), Duración (por defecto ascendente) y Año de estreno (por defecto descendente). Los títulos sin el dato por el que se ordena quedan siempre al final.
+   * **Filtros combinables desplegables (`AND` entre categorías)**:
+     * **Género**: desplegable inline multi-selección (`OR`) ordenado por frecuencia, intersecado con lo disponible para evitar filtros fantasma.
+     * **Duración, Época y Nota**: desplegable inline con botones `<` / `>` y barra deslizable horizontal entre el valor mínimo y máximo de la lista disponible (minutos, año o nota a 1 decimal).
+4. Al ordenar o filtrar por duración o año, [MoviePosterCard](../src/components/MoviePosterCard.tsx) muestra el dato correspondiente como subtítulo discreto en cada tarjeta. Si una caché antigua carece de `genreIds` o `runtime` necesarios para la vista actual, se muestra un aviso `NoticeCard` invitando a actualizar.
 
 ### B. Pantalla "News" ([app/(tabs)/news.tsx](file:///home/manuqc98/reposPersonales/letterwatch/app/(tabs)/news.tsx))
 1. Lee `jwNews` (novedades recolectadas desde JustWatch).

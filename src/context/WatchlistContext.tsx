@@ -15,7 +15,7 @@ import { TMDBService, TmdbError } from '../services/tmdb';
 import { JustWatchService, JustWatchEntry } from '../services/justwatch';
 import { PlatformKey, DEFAULT_PLATFORMS, matchPlatforms } from '../constants/platforms';
 
-export type VisibleMovie = CachedMovie & { matched: PlatformKey[] };
+export type VisibleMovie = CachedMovie & { matched: PlatformKey[]; watchlistIndex?: number };
 export type NewsMovie = VisibleMovie & { availableFrom: string; newOn: PlatformKey[] };
 export type LeavingMovie = VisibleMovie & { availableTo: string; singlePlatform: boolean };
 
@@ -232,7 +232,13 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
         const prev = previousById.get(movie.id);
         if (prev) interim.set(movie.id, prev);
       }
-      setAllMovies([...interim.values()]);
+      // Preserva el orden exacto de la watchlist de Letterboxd aunque se
+      // mezclen películas cacheadas con nuevas incorporaciones.
+      const orderedInterim = () =>
+        watchlist
+          .map((m) => interim.get(m.id))
+          .filter((m): m is CachedMovie => m !== undefined);
+      setAllMovies(orderedInterim());
 
       for (let i = 0; i < watchlist.length; i += BATCH_SIZE) {
         const batch = watchlist.slice(i, i + BATCH_SIZE);
@@ -248,9 +254,18 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
                   ? prev.tmdbId
                   : await TMDBService.searchMovie(movie.title, movie.year);
               if (tmdbId === null) {
-                return { ...movie, tmdbId: null, posterUrl: null, flatrateProviderIds: [], voteAverage: null, genreIds: [] };
+                return {
+                  ...movie,
+                  tmdbId: null,
+                  posterUrl: null,
+                  flatrateProviderIds: [],
+                  voteAverage: null,
+                  genreIds: [],
+                  runtime: null,
+                  originalLanguage: null,
+                };
               }
-              // Providers + nota + póster + géneros en una sola petición.
+              // Providers + nota + póster + géneros + duración + idioma en una sola petición.
               const status = await TMDBService.getMovieStatus(tmdbId);
               return {
                 ...movie,
@@ -259,6 +274,8 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
                 flatrateProviderIds: status.flatrateProviderIds,
                 voteAverage: status.voteAverage,
                 genreIds: status.genreIds,
+                runtime: status.runtime,
+                originalLanguage: status.originalLanguage,
               };
             } catch (err) {
               // Clave rechazada o ausente: falla todo el escaneo, no esta película.
@@ -279,10 +296,10 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
         for (const movie of processed) {
           if (movie) interim.set(movie.id, movie);
         }
-        setAllMovies([...interim.values()]);
+        setAllMovies(orderedInterim());
         setProgress(Math.min(i + BATCH_SIZE, watchlist.length) / watchlist.length);
       }
-      const results = [...interim.values()];
+      const results = orderedInterim();
 
       setProgressMsg('Consultando novedades de plataformas...');
       // Degradación por fuente: la que falla (null) conserva sus datos
@@ -381,9 +398,10 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
   const readyMovies = useMemo<VisibleMovie[]>(
     () =>
       allMovies
-        .map((movie) => ({
+        .map((movie, watchlistIndex) => ({
           ...movie,
           matched: matchPlatforms(movie.flatrateProviderIds, userPlatforms),
+          watchlistIndex,
         }))
         .filter((movie) => movie.matched.length > 0)
         .sort(compareByRating),

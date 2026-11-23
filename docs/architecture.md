@@ -45,6 +45,7 @@ letterwatch/
 │   ├── components/             # Componentes visuales reutilizables
 │   │   ├── ApiKeyInput.tsx     # Campo de API Key de TMDB (onboarding y Ajustes) con enlace a TMDB
 │   │   ├── EmptyState.tsx      # Estado vacío para listas sin resultados o errores suaves
+│   │   ├── FeedControls.tsx    # Barra de chips rápidos para ordenación y filtros combinables
 │   │   ├── MovieGrid.tsx       # Cuadrícula responsive de 3 columnas para pósters
 │   │   ├── MoviePosterCard.tsx # Tarjeta accesible de película con nota, logos y enlace
 │   │   ├── NoticeCard.tsx      # Banner informativo tonal estilo Material 3
@@ -58,11 +59,13 @@ letterwatch/
 │   │   └── theme.ts            # Semilla naranja (#FF8000), paletas M3 light/dark y tokens
 │   ├── context/
 │   │   └── WatchlistContext.tsx# Estado global: escaneo, caché, ordenación y filtrado
-│   └── services/               # Integraciones externas y almacenamiento
-│       ├── justwatch.ts        # Cliente GraphQL no oficial de JustWatch (News & Leaving)
-│       ├── letterboxd.ts       # Scraper HTML de Letterboxd con Axios + Cheerio
-│       ├── storage.ts          # Abstracción sobre AsyncStorage: epoch y dueña única de la API Key
-│       └── tmdb.ts             # Cliente REST TMDB: retry ante 429, timeout, TmdbError y checkKey
+│   ├── services/               # Integraciones externas y almacenamiento
+│   │   ├── justwatch.ts        # Cliente GraphQL no oficial de JustWatch (News & Leaving)
+│   │   ├── letterboxd.ts       # Scraper HTML de Letterboxd con Axios + Cheerio
+│   │   ├── storage.ts          # Abstracción sobre AsyncStorage: epoch y dueña única de la API Key
+│   │   └── tmdb.ts             # Cliente REST TMDB: retry ante 429, timeout, TmdbError y checkKey
+│   └── utils/
+│       └── movieFilters.ts     # Lógica pura de filtrado combinable, ordenación y formateo del feed
 ├── scripts/
 │   └── reset-project.js        # Script utilitario inicial de Expo
 ├── AGENTS.md                   # Reglas e instrucciones para agentes de IA

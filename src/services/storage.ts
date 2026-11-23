@@ -25,6 +25,10 @@ export interface CachedMovie extends WatchlistMovie {
   // en cachés anteriores: esas películas no matchean filtros de género
   // hasta el siguiente escaneo.
   genreIds?: number[];
+  // Duración en minutos y código de idioma original (ISO 639-1) de TMDB.
+  // Pueden faltar (undefined) en cachés anteriores hasta el siguiente escaneo.
+  runtime?: number | null;
+  originalLanguage?: string | null;
 }
 
 export interface CachedData {

@@ -143,7 +143,7 @@ export default function Onboarding() {
       <TextInput
         mode="outlined"
         label="Usuario de Letterboxd"
-        placeholder="p. ej. manuelqueiro"
+        placeholder="Tu usuario de Letterboxd"
         value={username}
         onChangeText={(text) => {
           setUserError(false);
