@@ -97,11 +97,12 @@ Para garantizar una experiencia fluida sin latencia de red, **el filtrado por pl
 1. Recibe `allMovies` y las plataformas activas `userPlatforms`.
 2. Calcula `readyMovies` verificando si `movie.flatrateProviderIds` coincide con los IDs de TMDB de las plataformas que el usuario tiene habilitadas (`matchPlatforms`).
 3. Mediante [movieFilters.ts](../src/utils/movieFilters.ts) y [FeedControls.tsx](../src/components/FeedControls.tsx), el usuario puede combinar en memoria (sin persistencia de sesión):
-   * **Búsqueda por título o año** (insensible a tildes y mayúsculas, en un `Searchbar` fuera del `FlatList` para evitar pérdida de foco).
+   * **Búsqueda por título o año** (insensible a tildes y mayúsculas, en un `Searchbar` fuera del `FlatList` para evitar pérdida de foco). El texto vive en su propio estado y el grid filtra con `useDeferredValue`, sobre títulos normalizados una sola vez por lista (`buildSearchIndex`).
    * **Ordenación configurable con dirección invertible (`↑ / ↓`)**: Nota (por defecto descendente), Duración (por defecto ascendente) y Año de estreno (por defecto descendente). Los títulos sin el dato por el que se ordena quedan siempre al final.
    * **Filtros combinables desplegables (`AND` entre categorías)**:
      * **Género**: desplegable inline multi-selección (`OR`) ordenado por frecuencia, intersecado con lo disponible para evitar filtros fantasma.
-     * **Duración, Época y Nota**: desplegable inline con botones `<` / `>` y barra deslizable horizontal entre el valor mínimo y máximo de la lista disponible (minutos, año o nota a 1 decimal).
+     * **Duración, Época y Nota**: desplegable inline con botones `≤` / `≥` (inclusivos) y una barra nativa ([NumericFilterSlider](../src/components/NumericFilterSlider.tsx), `@react-native-community/slider`) entre el mínimo y el máximo de la lista disponible (duración, año o nota a 1 decimal). El filtro se aplica al soltar la barra, o al momento si se ajusta con lector de pantalla.
+   * **Pipeline:** se ordena una vez (`sortMovies`, memo sobre `readyMovies` + orden) y después se filtra (`filterMovies`, conserva el orden): buscar o filtrar no reordena. `readyMovies` llega sin ordenar del contexto. `MoviePosterCard` va con `React.memo` y props primitivas para no redibujar las tarjetas que no cambian.
 4. Al ordenar o filtrar por duración o año, [MoviePosterCard](../src/components/MoviePosterCard.tsx) muestra el dato correspondiente como subtítulo discreto en cada tarjeta. Si una caché antigua carece de `genreIds` o `runtime` necesarios para la vista actual, se muestra un aviso `NoticeCard` invitando a actualizar.
 
 ### B. Pantalla "News" ([app/(tabs)/news.tsx](file:///home/manuqc98/reposPersonales/letterwatch/app/(tabs)/news.tsx))

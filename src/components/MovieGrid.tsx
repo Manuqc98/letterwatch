@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react';
 import { FlatList, useWindowDimensions } from 'react-native';
 import type { VisibleMovie } from '../context/WatchlistContext';
-import { MoviePosterCard } from './MoviePosterCard';
+import { MoviePosterCard, type SubtitleTone } from './MoviePosterCard';
 import { Spacing } from '../constants/theme';
 
 const NUM_COLUMNS = 3;
@@ -11,7 +11,7 @@ interface Props<T extends VisibleMovie> {
   movies: T[];
   listHeader?: ReactElement | null;
   listEmpty?: ReactElement | null;
-  getSubtitle?: (movie: T) => { text: string; tone: 'primary' | 'error' | 'muted' } | undefined;
+  getSubtitle?: (movie: T) => { text: string; tone: SubtitleTone } | undefined;
   getBadge?: (movie: T) => string | undefined;
 }
 
@@ -38,14 +38,18 @@ export function MovieGrid<T extends VisibleMovie>({
       contentContainerStyle={{ padding: Spacing.md, paddingBottom: 88, gap: GRID_GAP + 4 }}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
-      renderItem={({ item }) => (
-        <MoviePosterCard
-          movie={item}
-          width={cardWidth}
-          subtitle={getSubtitle?.(item)}
-          badge={getBadge?.(item)}
-        />
-      )}
+      renderItem={({ item }) => {
+        const subtitle = getSubtitle?.(item);
+        return (
+          <MoviePosterCard
+            movie={item}
+            width={cardWidth}
+            subtitleText={subtitle?.text}
+            subtitleTone={subtitle?.tone}
+            badge={getBadge?.(item)}
+          />
+        );
+      }}
       ListHeaderComponent={listHeader}
       ListEmptyComponent={listEmpty}
     />

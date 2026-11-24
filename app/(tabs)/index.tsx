@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useDeferredValue, useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { IconButton, Searchbar, Text, useTheme } from 'react-native-paper';
 import { useRouter } from 'expo-router';
@@ -12,18 +12,21 @@ import { ProgressCard } from '../../src/components/ProgressCard';
 import { ScanFab } from '../../src/components/ScanFab';
 import { Spacing } from '../../src/constants/theme';
 import {
+  buildSearchIndex,
   countActiveFilters,
   createEmptyFilters,
   DEFAULT_SORT,
   extractAvailableOptions,
-  filterAndSortMovies,
+  filterMovies,
   formatRuntime,
   MovieFilterState,
   NumericFilter,
+  NumericFilterKey,
   sanitizeFilters,
   SORT_OPTIONS,
   SortField,
   SortState,
+  sortMovies,
 } from '../../src/utils/movieFilters';
 
 function toggleInSet<T>(set: Set<T>, value: T): Set<T> {
@@ -39,18 +42,26 @@ export default function ReadyToWatch() {
   const { readyMovies, allMovies, lastUpdated, truncated, isStale, isLoading } = useWatchlist();
   // Filtros y ordenación rápidos de sesión (no se persisten).
   const [filters, setFilters] = useState<MovieFilterState>(createEmptyFilters);
+  const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortState>(DEFAULT_SORT);
   const [searchOpen, setSearchOpen] = useState(false);
+  // El Searchbar usa `query` al instante; el grid filtra con la versión
+  // diferida, en un render de baja prioridad que no frena el teclado.
+  const deferredQuery = useDeferredValue(query);
 
   const options = useMemo(() => extractAvailableOptions(readyMovies), [readyMovies]);
+  const searchIndex = useMemo(() => buildSearchIndex(readyMovies), [readyMovies]);
 
   // Interseca selecciones con lo disponible para evitar filtros fantasma tras re-escanear.
   const activeFilters = useMemo(() => sanitizeFilters(filters, options), [filters, options]);
-  const activeFilterCount = useMemo(() => countActiveFilters(activeFilters), [activeFilters]);
+  const activeFilterCount = countActiveFilters(activeFilters, query);
 
+  // Primero se ordena y después se filtra (el filtro conserva el orden):
+  // teclear en el buscador o tocar un filtro no reordena la lista.
+  const sortedMovies = useMemo(() => sortMovies(readyMovies, sort), [readyMovies, sort]);
   const displayedMovies = useMemo(
-    () => filterAndSortMovies(readyMovies, activeFilters, sort),
-    [readyMovies, activeFilters, sort]
+    () => filterMovies(sortedMovies, activeFilters, deferredQuery, searchIndex),
+    [sortedMovies, activeFilters, deferredQuery, searchIndex]
   );
 
   // Películas de caché antigua sin género o duración cuando se usan en el filtro/orden actual.
@@ -87,31 +98,21 @@ export default function ReadyToWatch() {
     setFilters((prev) => ({ ...prev, genres: new Set() }));
   }, []);
 
-  const handleChangeRuntime = useCallback((runtime: NumericFilter | null) => {
-    setFilters((prev) => ({ ...prev, runtime }));
-  }, []);
-
-  const handleChangeYear = useCallback((year: NumericFilter | null) => {
-    setFilters((prev) => ({ ...prev, year }));
-  }, []);
-
-  const handleChangeRating = useCallback((rating: NumericFilter | null) => {
-    setFilters((prev) => ({ ...prev, rating }));
+  const handleChangeNumeric = useCallback((key: NumericFilterKey, value: NumericFilter | null) => {
+    setFilters((prev) => ({ ...prev, [key]: value }));
   }, []);
 
   const handleClearAllFilters = useCallback(() => {
     setFilters(createEmptyFilters());
+    setQuery('');
     setSearchOpen(false);
   }, []);
 
+  // Cerrar la búsqueda la vacía: un texto oculto seguiría filtrando.
   const handleToggleSearch = useCallback(() => {
-    setSearchOpen((prev) => {
-      if (prev) {
-        setFilters((f) => (f.query ? { ...f, query: '' } : f));
-      }
-      return !prev;
-    });
-  }, []);
+    if (searchOpen) setQuery('');
+    setSearchOpen(!searchOpen);
+  }, [searchOpen]);
 
   const showRuntimeHint = sort.field === 'runtime' || activeFilters.runtime !== null;
   const showYearHint = sort.field === 'year' || activeFilters.year !== null;
@@ -126,7 +127,7 @@ export default function ReadyToWatch() {
     };
   }, [showRuntimeHint, showYearHint]);
 
-  const showSearchBar = (searchOpen || filters.query.length > 0) && readyMovies.length > 0;
+  const showSearchBar = searchOpen && readyMovies.length > 0;
 
   const listHeader = (
     <View style={{ gap: Spacing.sm, marginBottom: Spacing.md }}>
@@ -187,9 +188,7 @@ export default function ReadyToWatch() {
           onSelectSort={handleSelectSort}
           onToggleGenre={handleToggleGenre}
           onClearGenres={handleClearGenres}
-          onChangeRuntime={handleChangeRuntime}
-          onChangeYear={handleChangeYear}
-          onChangeRating={handleChangeRating}
+          onChangeNumeric={handleChangeNumeric}
           onClearAllFilters={handleClearAllFilters}
         />
       )}
@@ -240,9 +239,9 @@ export default function ReadyToWatch() {
         <View style={{ paddingHorizontal: Spacing.md, paddingTop: Spacing.sm, paddingBottom: Spacing.xs }}>
           <Searchbar
             placeholder="Buscar por título o año…"
-            value={filters.query}
-            onChangeText={(query) => setFilters((prev) => ({ ...prev, query }))}
-            autoFocus={searchOpen && filters.query.length === 0}
+            value={query}
+            onChangeText={setQuery}
+            autoFocus
             style={{ backgroundColor: theme.colors.elevation.level2 }}
           />
         </View>

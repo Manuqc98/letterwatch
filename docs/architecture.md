@@ -49,6 +49,7 @@ letterwatch/
 │   │   ├── MovieGrid.tsx       # Cuadrícula responsive de 3 columnas para pósters
 │   │   ├── MoviePosterCard.tsx # Tarjeta accesible de película con nota, logos y enlace
 │   │   ├── NoticeCard.tsx      # Banner informativo tonal estilo Material 3
+│   │   ├── NumericFilterSlider.tsx # Filtro ≤/≥ con barra nativa (duración, época, nota)
 │   │   ├── PlatformList.tsx    # Lista agrupada con switches para activar plataformas
 │   │   ├── ProgressCard.tsx    # Barra de progreso y mensajes durante escaneos
 │   │   ├── ScanFab.tsx         # Floating Action Button flotante para refrescar catálogo
@@ -58,7 +59,7 @@ letterwatch/
 │   │   ├── platforms.ts        # Definición de plataformas ES, IDs TMDB y packages JW
 │   │   └── theme.ts            # Semilla naranja (#FF8000), paletas M3 light/dark y tokens
 │   ├── context/
-│   │   └── WatchlistContext.tsx# Estado global: escaneo, caché, ordenación y filtrado
+│   │   └── WatchlistContext.tsx# Estado global: escaneo, caché y cruce con las plataformas del usuario
 │   ├── services/               # Integraciones externas y almacenamiento
 │   │   ├── justwatch.ts        # Cliente GraphQL no oficial de JustWatch (News & Leaving)
 │   │   ├── letterboxd.ts       # Scraper HTML de Letterboxd con Axios + Cheerio

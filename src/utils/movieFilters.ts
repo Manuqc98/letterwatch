@@ -1,5 +1,5 @@
 import { TMDB_GENRES } from '../constants/genres';
-import type { VisibleMovie } from '../context/WatchlistContext';
+import type { CachedMovie } from '../services/storage';
 
 export type SortField = 'rating' | 'runtime' | 'year';
 export type SortDirection = 'asc' | 'desc';
@@ -24,15 +24,24 @@ export const SORT_OPTIONS: {
   { field: 'year', label: 'Año', defaultDir: 'desc' },
 ];
 
-export type CompareOp = 'lt' | 'gt';
+// Inclusivos: "≤ 2h" incluye las que duran justo 2h, y con la barra en un
+// extremo no se excluye la propia película que lo marca.
+export type CompareOp = 'lte' | 'gte';
+
+export function opSymbol(op: CompareOp): string {
+  return op === 'lte' ? '≤' : '≥';
+}
+
+export type NumericFilterKey = 'runtime' | 'year' | 'rating';
 
 export interface NumericFilter {
   op: CompareOp;
   value: number;
 }
 
+// Sin el texto de búsqueda: va en su propio estado (diferido) para que
+// teclear no cambie este objeto ni re-renderice los controles de filtro.
 export interface MovieFilterState {
-  query: string;
   genres: Set<number>;
   runtime: NumericFilter | null; // minutos (ej. 88)
   year: NumericFilter | null; // año (ej. 1999)
@@ -41,7 +50,6 @@ export interface MovieFilterState {
 
 export function createEmptyFilters(): MovieFilterState {
   return {
-    query: '',
     genres: new Set(),
     runtime: null,
     year: null,
@@ -74,7 +82,7 @@ export function formatRatingTenths(tenths: number): string {
   return (tenths / 10).toFixed(1).replace('.', ',');
 }
 
-function ratingTenths(movie: VisibleMovie): number | null {
+function ratingTenths(movie: CachedMovie): number | null {
   return movie.voteAverage != null ? Math.round(movie.voteAverage * 10) : null;
 }
 
@@ -84,7 +92,7 @@ function parseYear(year?: string): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
-export function extractAvailableOptions(movies: VisibleMovie[]): AvailableFilterOptions {
+export function extractAvailableOptions(movies: CachedMovie[]): AvailableFilterOptions {
   const genreCounts = new Map<number, number>();
 
   let minRuntime = Infinity;
@@ -144,7 +152,6 @@ export function sanitizeFilters(
 ): MovieFilterState {
   const availableGenres = new Set(options.genres.map(([id]) => id));
   return {
-    query: filters.query,
     genres: new Set([...filters.genres].filter((id) => availableGenres.has(id))),
     runtime: filters.runtime,
     year: options.yearRange ? filters.year : null,
@@ -152,9 +159,9 @@ export function sanitizeFilters(
   };
 }
 
-export function countActiveFilters(filters: MovieFilterState): number {
+export function countActiveFilters(filters: MovieFilterState, query: string): number {
   let count = 0;
-  if (filters.query.trim().length > 0) count++;
+  if (query.trim().length > 0) count++;
   if (filters.genres.size > 0) count++;
   if (filters.runtime !== null) count++;
   if (filters.year !== null) count++;
@@ -169,9 +176,15 @@ function normalizeText(str: string): string {
     .toLowerCase();
 }
 
+// Títulos normalizados por id, calculados una vez por lista: la búsqueda no
+// repite normalize() + regex de cada título en cada pulsación.
+export function buildSearchIndex(movies: CachedMovie[]): Map<string, string> {
+  return new Map(movies.map((movie) => [movie.id, normalizeText(movie.title)]));
+}
+
 function matchesNumeric(actual: number | null | undefined, filter: NumericFilter): boolean {
   if (actual == null) return false;
-  return filter.op === 'lt' ? actual < filter.value : actual > filter.value;
+  return filter.op === 'lte' ? actual <= filter.value : actual >= filter.value;
 }
 
 // Compara dos valores numéricos opcionales colocando SIEMPRE los nulos al final,
@@ -187,7 +200,9 @@ function compareNullableNumber(
   return direction === 'asc' ? a - b : b - a;
 }
 
-function compareDefaultTieBreak(a: VisibleMovie, b: VisibleMovie): number {
+// Orden por defecto (y desempate de los demás): nota desc → año reciente →
+// alfabético. Lo comparten Ready, News y WatchOut.
+export function compareByRating(a: CachedMovie, b: CachedMovie): number {
   const byRating = compareNullableNumber(ratingTenths(a), ratingTenths(b), 'desc');
   if (byRating !== 0) return byRating;
   const byYear = compareNullableNumber(parseYear(a.year), parseYear(b.year), 'desc');
@@ -195,7 +210,7 @@ function compareDefaultTieBreak(a: VisibleMovie, b: VisibleMovie): number {
   return a.title.localeCompare(b.title, 'es');
 }
 
-export function compareMovies(a: VisibleMovie, b: VisibleMovie, sort: SortState): number {
+export function compareMovies(a: CachedMovie, b: CachedMovie, sort: SortState): number {
   let primary = 0;
   switch (sort.field) {
     case 'rating':
@@ -209,23 +224,29 @@ export function compareMovies(a: VisibleMovie, b: VisibleMovie, sort: SortState)
       break;
   }
   if (primary !== 0) return primary;
-  return compareDefaultTieBreak(a, b);
+  return compareByRating(a, b);
 }
 
-// Aplica todos los filtros activos (AND entre categorías, OR dentro de géneros)
-// y después ordena según el criterio elegido.
-export function filterAndSortMovies(
-  movies: VisibleMovie[],
-  filters: MovieFilterState,
-  sort: SortState
-): VisibleMovie[] {
-  const normalizedQuery = normalizeText(filters.query.trim());
+export function sortMovies<T extends CachedMovie>(movies: T[], sort: SortState): T[] {
+  return [...movies].sort((a, b) => compareMovies(a, b, sort));
+}
 
-  const filtered = movies.filter((movie) => {
+// Aplica todos los filtros activos (AND entre categorías, OR dentro de
+// géneros). Conserva el orden de entrada: se filtra sobre la lista ya
+// ordenada, así escribir en el buscador no reordena nada.
+export function filterMovies<T extends CachedMovie>(
+  movies: T[],
+  filters: MovieFilterState,
+  query: string,
+  searchIndex: Map<string, string>
+): T[] {
+  const normalizedQuery = normalizeText(query.trim());
+
+  return movies.filter((movie) => {
     if (normalizedQuery.length > 0) {
-      const titleMatch = normalizeText(movie.title).includes(normalizedQuery);
+      const title = searchIndex.get(movie.id) ?? normalizeText(movie.title);
       const yearMatch = movie.year ? movie.year.includes(normalizedQuery) : false;
-      if (!titleMatch && !yearMatch) return false;
+      if (!title.includes(normalizedQuery) && !yearMatch) return false;
     }
 
     if (filters.genres.size > 0) {
@@ -246,6 +267,4 @@ export function filterAndSortMovies(
 
     return true;
   });
-
-  return [...filtered].sort((a, b) => compareMovies(a, b, sort));
 }

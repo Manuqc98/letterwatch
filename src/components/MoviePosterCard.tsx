@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { View } from 'react-native';
 import { Icon, Text, TouchableRipple, useTheme } from 'react-native-paper';
 import { Image } from 'expo-image';
@@ -20,17 +21,28 @@ async function openInLetterboxd(slug: string) {
   }
 }
 
+export type SubtitleTone = 'primary' | 'error' | 'muted';
+
+// Props primitivas (no un objeto subtitle): así memo() puede saltarse las
+// tarjetas que no cambian cuando el grid se re-renderiza al buscar o filtrar.
 interface Props {
   movie: VisibleMovie;
   width: number;
   // News: "desde 12/09" (primary) · WatchOut: "hasta 20/09" (error) · Ready: duración/año (muted)
-  subtitle?: { text: string; tone: 'primary' | 'error' | 'muted' };
+  subtitleText?: string;
+  subtitleTone?: SubtitleTone;
   badge?: string; // WatchOut: "Única plataforma"
 }
 
 const MAX_LOGOS = 3;
 
-export function MoviePosterCard({ movie, width, subtitle, badge }: Props) {
+export const MoviePosterCard = memo(function MoviePosterCard({
+  movie,
+  width,
+  subtitleText,
+  subtitleTone = 'primary',
+  badge,
+}: Props) {
   const theme = useTheme();
   const logos = movie.matched.slice(0, MAX_LOGOS);
   const extra = movie.matched.length - logos.length;
@@ -40,7 +52,7 @@ export function MoviePosterCard({ movie, width, subtitle, badge }: Props) {
     `${movie.title}${movie.year ? `, ${movie.year}` : ''}`,
     movie.voteAverage != null ? `nota ${movie.voteAverage.toFixed(1).replace('.', ',')}` : null,
     movie.matched.length > 0 ? `en ${movie.matched.map((k) => PLATFORMS[k].name).join(', ')}` : null,
-    subtitle?.text ?? null,
+    subtitleText ?? null,
     badge ?? null,
   ]
     .filter(Boolean)
@@ -93,21 +105,21 @@ export function MoviePosterCard({ movie, width, subtitle, badge }: Props) {
       <Text variant="labelMedium" numberOfLines={1} maxFontSizeMultiplier={1.5} style={{ marginTop: 6 }}>
         {movie.title}
       </Text>
-      {subtitle && (
+      {subtitleText && (
         <Text
           variant="labelSmall"
           numberOfLines={1}
           maxFontSizeMultiplier={1.5}
           style={{
             color:
-              subtitle.tone === 'error'
+              subtitleTone === 'error'
                 ? theme.colors.error
-                : subtitle.tone === 'muted'
+                : subtitleTone === 'muted'
                   ? theme.colors.onSurfaceVariant
                   : theme.colors.primary,
           }}
         >
-          {subtitle.text}
+          {subtitleText}
         </Text>
       )}
 
@@ -149,4 +161,4 @@ export function MoviePosterCard({ movie, width, subtitle, badge }: Props) {
       </View>
     </TouchableRipple>
   );
-}
+});

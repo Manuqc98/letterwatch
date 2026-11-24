@@ -14,7 +14,10 @@ import { LetterboxdService, LetterboxdError } from '../services/letterboxd';
 import { TMDBService, TmdbError } from '../services/tmdb';
 import { JustWatchService, JustWatchEntry } from '../services/justwatch';
 import { PlatformKey, DEFAULT_PLATFORMS, matchPlatforms } from '../constants/platforms';
+import { compareByRating } from '../utils/movieFilters';
 
+// watchlistIndex: posición en la watchlist de Letterboxd (orden de añadido).
+// Reservado para una futura ordenación "Añadidas recientemente".
 export type VisibleMovie = CachedMovie & { matched: PlatformKey[]; watchlistIndex?: number };
 export type NewsMovie = VisibleMovie & { availableFrom: string; newOn: PlatformKey[] };
 export type LeavingMovie = VisibleMovie & { availableTo: string; singlePlatform: boolean };
@@ -40,21 +43,6 @@ export function fmtDay(iso: string): string {
 
 function isoDayFromMs(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10);
-}
-
-function ratingKey(movie: CachedMovie): number {
-  return movie.voteAverage != null ? Math.round(movie.voteAverage * 10) : -1;
-}
-
-// Orden de Ready: nota (a 1 decimal, como se muestra) desc → año reciente → alfabético.
-function compareByRating(a: CachedMovie, b: CachedMovie): number {
-  const ratingA = ratingKey(a);
-  const ratingB = ratingKey(b);
-  if (ratingA !== ratingB) return ratingB - ratingA;
-  const yearA = a.year ? parseInt(a.year, 10) : 0;
-  const yearB = b.year ? parseInt(b.year, 10) : 0;
-  if (yearA !== yearB) return yearB - yearA;
-  return a.title.localeCompare(b.title, 'es');
 }
 
 interface WatchlistContextValue {
@@ -403,8 +391,9 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
           matched: matchPlatforms(movie.flatrateProviderIds, userPlatforms),
           watchlistIndex,
         }))
-        .filter((movie) => movie.matched.length > 0)
-        .sort(compareByRating),
+        // Sin ordenar: Ready ordena según el criterio que elige el usuario
+        // (movieFilters.sortMovies); ordenar aquí sería trabajo tirado.
+        .filter((movie) => movie.matched.length > 0),
     [allMovies, userPlatforms]
   );
 
